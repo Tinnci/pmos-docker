@@ -32,16 +32,71 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 缓存 pip/apk/ccache ─────────────────────────────────
-      - name: Restore build caches
+      # 月份标识用于缓存 key 自动轮转（Docker 镜像 / pmaports）
+      - name: Set monthly cache key
+        run: echo "YM=$(date +%Y%m)" >> $GITHUB_ENV
+
+      # ── 缓存 1: ccache（key 用 run_id 滚动，始终保留最新一次）
+      # restore-keys 兜底：同分支最近一次 → 同包名任意分支
+      # ★ 不再绑定 patch-kernel 脚本 hash，patch 变动不会丢弃已编译对象
+      - name: Restore ccache
         uses: actions/cache@v4
         with:
-          path: |
-            cache/
-            ccache/
-          key: pmos-kernel-${{ env.KERNEL_PKG }}-${{ hashFiles('scripts/patch-kernel-otbr.sh') }}
+          path: ccache/
+          key: ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            pmos-kernel-${{ env.KERNEL_PKG }}-
+            ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-
+            ccache-${{ env.KERNEL_PKG }}-
+
+      # ── 缓存 2: pip（pmbootstrap Python 依赖，极少变化）─────
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: cache/
+          key: pip-pmos-${{ env.KERNEL_PKG }}
+
+      # ── 缓存 3: 内核源码 tarball（~147MB，省去每次重新下载）
+      - name: Restore distfiles cache
+        uses: actions/cache@v4
+        with:
+          path: work/pmbootstrap/cache_distfiles/
+          key: distfiles-${{ env.KERNEL_PKG }}
+          restore-keys: distfiles-
+
+      # ── 缓存 4: pmaports git 仓库（省去每次重新 clone ~3min）
+      # 月度轮转 key 保证定期拉取最新；pmbootstrap pull 会增量更新
+      - name: Restore pmaports cache
+        uses: actions/cache@v4
+        with:
+          path: work/pmbootstrap/cache_git/
+          key: pmaports-${{ env.KERNEL_PKG }}-${{ env.YM }}
+          restore-keys: |
+            pmaports-${{ env.KERNEL_PKG }}-
+            pmaports-
+
+      # ── 缓存 5: Docker 镜像（172MB，省去每次重新拉取）────────
+      # 月度轮转 key 保证定期拉取最新 edge 版本
+      - name: Cache Docker image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/pmos-image.tar.gz
+          key: docker-pmos-${{ env.YM }}-${{ hashFiles('docker-compose.yml') }}
+          restore-keys: |
+            docker-pmos-${{ env.YM }}-
+            docker-pmos-
+
+      - name: Load or pull Docker image
+        run: |
+          IMAGE=$(grep 'image:' docker-compose.yml | awk '{print $2}' | head -1)
+          if [ -f /tmp/pmos-image.tar.gz ]; then
+            echo "从缓存加载 Docker 镜像..."
+            docker load < /tmp/pmos-image.tar.gz
+          else
+            echo "拉取 Docker 镜像: $IMAGE"
+            docker pull "$IMAGE"
+            echo "保存镜像至缓存..."
+            docker save "$IMAGE" | gzip > /tmp/pmos-image.tar.gz
+          fi
 
       # ── 注册 aarch64 binfmt_misc ────────────────────────────
       - name: Register binfmt_misc for aarch64

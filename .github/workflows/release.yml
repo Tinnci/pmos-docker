@@ -43,16 +43,67 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
 
-      # ── 缓存 ────────────────────────────────────────────────
-      - name: Restore build caches
+      # 月份标识用于缓存 key 自动轮转
+      - name: Set monthly cache key
+        run: echo "YM=$(date +%Y%m)" >> $GITHUB_ENV
+
+      # ── 缓存 1: ccache（run_id 滚动，不随 patch 变化失效）──
+      - name: Restore ccache
         uses: actions/cache@v4
         with:
-          path: |
-            cache/
-            ccache/
-          key: pmos-kernel-${{ env.KERNEL_PKG }}-${{ hashFiles('scripts/patch-kernel-otbr.sh') }}
+          path: ccache/
+          key: ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            pmos-kernel-${{ env.KERNEL_PKG }}-
+            ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-
+            ccache-${{ env.KERNEL_PKG }}-
+
+      # ── 缓存 2: pip ─────────────────────────────────────────
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: cache/
+          key: pip-pmos-${{ env.KERNEL_PKG }}
+
+      # ── 缓存 3: 内核源码 tarball（~147MB）────────────────────
+      - name: Restore distfiles cache
+        uses: actions/cache@v4
+        with:
+          path: work/pmbootstrap/cache_distfiles/
+          key: distfiles-${{ env.KERNEL_PKG }}
+          restore-keys: distfiles-
+
+      # ── 缓存 4: pmaports git 仓库（月度轮转）─────────────────
+      - name: Restore pmaports cache
+        uses: actions/cache@v4
+        with:
+          path: work/pmbootstrap/cache_git/
+          key: pmaports-${{ env.KERNEL_PKG }}-${{ env.YM }}
+          restore-keys: |
+            pmaports-${{ env.KERNEL_PKG }}-
+            pmaports-
+
+      # ── 缓存 5: Docker 镜像（172MB，月度轮转）────────────────
+      - name: Cache Docker image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/pmos-image.tar.gz
+          key: docker-pmos-${{ env.YM }}-${{ hashFiles('docker-compose.yml') }}
+          restore-keys: |
+            docker-pmos-${{ env.YM }}-
+            docker-pmos-
+
+      - name: Load or pull Docker image
+        run: |
+          IMAGE=$(grep 'image:' docker-compose.yml | awk '{print $2}' | head -1)
+          if [ -f /tmp/pmos-image.tar.gz ]; then
+            echo "从缓存加载 Docker 镜像..."
+            docker load < /tmp/pmos-image.tar.gz
+          else
+            echo "拉取 Docker 镜像: $IMAGE"
+            docker pull "$IMAGE"
+            echo "保存镜像至缓存..."
+            docker save "$IMAGE" | gzip > /tmp/pmos-image.tar.gz
+          fi
 
       # ── binfmt_misc ─────────────────────────────────────────
       - name: Register binfmt_misc for aarch64
