@@ -1,0 +1,196 @@
+name: Release kernel (google-kukui)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'          # v1.0.0, v1.2.3-otbr 等
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag（例如 v1.0.0）'
+        required: true
+      prerelease:
+        description: '标记为预发布版本'
+        type: boolean
+        default: false
+      release_notes:
+        description: '额外的发布说明（可选）'
+        required: false
+
+env:
+  KERNEL_PKG: linux-postmarketos-mediatek-mt81
+  DEVICE: google-kukui
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write   # 创建 release 需要
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 获取完整历史用于 changelog
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      # ── 缓存 ────────────────────────────────────────────────
+      - name: Restore build caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache/
+            ccache/
+          key: pmos-kernel-${{ env.KERNEL_PKG }}-${{ hashFiles('scripts/patch-kernel-otbr.sh') }}
+          restore-keys: |
+            pmos-kernel-${{ env.KERNEL_PKG }}-
+
+      # ── binfmt_misc ─────────────────────────────────────────
+      - name: Register binfmt_misc for aarch64
+        run: |
+          sudo apt-get install -y qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-aarch64
+
+      # ── 启动容器并等待初始化 ────────────────────────────────
+      - name: Start pmos-builder container
+        run: |
+          docker compose up -d
+          for i in $(seq 1 30); do
+            if docker compose exec -T pmos-builder sh -c 'which pmbootstrap' >/dev/null 2>&1; then
+              echo "Container ready"
+              break
+            fi
+            sleep 10
+          done
+
+      - name: Init pmbootstrap
+        run: |
+          if [ ! -f work/pmbootstrap/config ]; then
+            docker compose exec -T pmos-builder sh /scripts/init-pmbootstrap.sh
+          fi
+
+      - name: Patch kernel config
+        run: |
+          docker compose exec -T pmos-builder sh /scripts/patch-kernel-otbr.sh
+
+      - name: Update checksum
+        run: |
+          docker compose exec -T pmos-builder sh -c \
+            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap checksum ${{ env.KERNEL_PKG }}"'
+
+      - name: kconfig check
+        run: |
+          docker compose exec -T pmos-builder sh -c \
+            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap kconfig check ${{ env.KERNEL_PKG }}"'
+
+      - name: Build kernel
+        run: |
+          docker compose exec -T pmos-builder sh -c \
+            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap build --force ${{ env.KERNEL_PKG }}"'
+
+      - name: Re-apply tar wrapper
+        run: |
+          docker compose exec -T pmos-builder sh -c '
+            if [ -f /work/pmbootstrap/chroot_native/usr/bin/tar.real ]; then
+              cp /scripts/tar-wrapper.sh /work/pmbootstrap/chroot_native/usr/bin/tar
+              chmod +x /work/pmbootstrap/chroot_native/usr/bin/tar
+            fi
+          '
+
+      # ── 收集产物 ─────────────────────────────────────────────
+      - name: Collect APKs
+        id: collect
+        run: |
+          mkdir -p release-assets
+          find work/pmbootstrap/packages/ \
+            -name "linux-postmarketos-mediatek-mt81*.apk" \
+            -exec cp {} release-assets/ \;
+          # 生成 SHA256 校验文件
+          cd release-assets
+          sha256sum *.apk > SHA256SUMS 2>/dev/null || true
+          ls -lh
+          echo "files=$(ls release-assets/*.apk 2>/dev/null | wc -l)" >> $GITHUB_OUTPUT
+
+      # ── 生成 changelog（基于 git log） ───────────────────────
+      - name: Generate changelog
+        id: changelog
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          # 找上一个 tag
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1 || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            LOG=$(git log --oneline "${PREV_TAG}..HEAD" 2>/dev/null | head -30)
+          else
+            LOG=$(git log --oneline -20 2>/dev/null)
+          fi
+
+          # 构建 release body
+          cat > /tmp/release-body.md << RELEOF
+          ## postmarketOS 内核 ${TAG} — google-kukui (MT8183)
+
+          ### 包含的定制配置
+
+          | 功能 | 说明 |
+          |------|------|
+          | IPv6/IPv4 多播路由 | OTBR / OpenThread (ESP32-C6 USB RCP) |
+          | BLE 支持 | \`BT_LE=y\` — Matter BLE 配网 |
+          | 容器网络 | VETH, BRIDGE (Waydroid / Docker) |
+          | 网络调度器 | FQ, FQ-CoDel, CAKE |
+          | BPF/kprobes | pmaports 合规要求 |
+          | Netfilter | iptables + nftables 模块 |
+
+          ### 内核版本
+          \`linux-postmarketos-mediatek-mt81\` (MT8183 共享内核，适用于 Chromebook Crane/kukui)
+
+          ### 安装方式
+          \`\`\`sh
+          # 把 .apk 推送到设备后：
+          sudo apk add --allow-untrusted linux-postmarketos-mediatek-mt81-*.apk
+          # 或通过 pmbootstrap 刷入：
+          pmbootstrap flasher flash_kernel --device google-kukui
+          \`\`\`
+
+          ${{ inputs.release_notes }}
+
+          ### 变更记录
+          ${LOG}
+          RELEOF
+
+          echo "body_file=/tmp/release-body.md" >> $GITHUB_OUTPUT
+
+      # ── 使用 gh CLI 创建 Release ─────────────────────────────
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          PRERELEASE=""
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            PRERELEASE="--prerelease"
+          fi
+
+          # 如果是 workflow_dispatch 并且 tag 不存在，先创建 tag
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            git tag "$TAG" 2>/dev/null || true
+            git push origin "$TAG" 2>/dev/null || true
+          fi
+
+          # 创建 Release 并上传产物
+          gh release create "$TAG" \
+            --title "pmos kernel ${TAG} (google-kukui OTBR+BLE)" \
+            --notes-file "${{ steps.changelog.outputs.body_file }}" \
+            $PRERELEASE \
+            release-assets/*.apk \
+            release-assets/SHA256SUMS
+
+          echo "✅ Release ${TAG} 已发布"
+          gh release view "$TAG"

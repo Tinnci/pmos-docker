@@ -1,0 +1,23 @@
+services:
+  pmos-builder:
+    # 官方 postmarketOS Docker 镜像（每周更新，预装 pmbootstrap + QEMU 跨架构支持）
+    # 镜像源：https://gitlab.postmarketos.org/postmarketOS/docker-postmarketos
+    # edge = 滚动更新；latest/25.12 = 稳定版
+    image: git.achill.org/achill/postmarketos:edge
+    container_name: pmos-builder
+    privileged: true
+    working_dir: /work
+    tty: true
+    stdin_open: true
+    environment:
+      - CCACHE_DIR=/ccache
+      # pmbootstrap 跳过交互式颜色/进度条（CI 友好）
+      - PAGER=cat
+      - TERM=xterm-256color
+    volumes:
+      - ./work:/work
+      - ./cache:/root/.cache
+      - ./ccache:/ccache
+      - ./scripts:/scripts
+    command: ["sh", "-lc", "mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true; sh /scripts/bootstrap-pmbootstrap.sh; sleep infinity"]
+    restart: unless-stopped

@@ -1,0 +1,143 @@
+name: Build pmos kernel (google-kukui)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: '强制重新构建（忽略缓存）'
+        type: boolean
+        default: false
+
+env:
+  KERNEL_PKG: linux-postmarketos-mediatek-mt81
+  DEVICE: google-kukui
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # aarch64 交叉编译约 40-60 分钟
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 缓存 pip/apk/ccache ─────────────────────────────────
+      - name: Restore build caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache/
+            ccache/
+          key: pmos-kernel-${{ env.KERNEL_PKG }}-${{ hashFiles('scripts/patch-kernel-otbr.sh') }}
+          restore-keys: |
+            pmos-kernel-${{ env.KERNEL_PKG }}-
+
+      # ── 注册 aarch64 binfmt_misc ────────────────────────────
+      - name: Register binfmt_misc for aarch64
+        run: |
+          sudo apt-get install -y qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-aarch64
+
+      # ── 启动 pmos-builder 容器 ──────────────────────────────
+      - name: Start pmos-builder container
+        run: |
+          docker compose up -d
+          # 等待 bootstrap 脚本完成（pmbootstrap + 工具安装）
+          echo "等待容器初始化..."
+          for i in $(seq 1 30); do
+            if docker compose exec -T pmos-builder sh -c 'which pmbootstrap' >/dev/null 2>&1; then
+              echo "pmbootstrap 准备就绪"
+              break
+            fi
+            sleep 10
+          done
+
+      # ── 初始化 pmbootstrap（如 work/ 目录为空时） ──────────
+      - name: Init pmbootstrap
+        run: |
+          if [ ! -f work/pmbootstrap/config ]; then
+            echo "首次初始化 pmbootstrap..."
+            docker compose exec -T pmos-builder sh /scripts/init-pmbootstrap.sh
+          else
+            echo "pmbootstrap 已初始化，跳过"
+          fi
+
+      # ── 安装 tar 包装脚本（修复 Docker overlay2 问题） ───────
+      - name: Install tar wrapper for overlay2
+        run: |
+          docker compose exec -T pmos-builder sh -c '
+            if [ ! -f /work/pmbootstrap/chroot_native/usr/bin/tar.real ]; then
+              exit 0  # chroot 尚未创建，构建时会自动处理
+            fi
+            cp /scripts/tar-wrapper.sh /work/pmbootstrap/chroot_native/usr/bin/tar
+            chmod +x /work/pmbootstrap/chroot_native/usr/bin/tar
+            echo "tar wrapper 已安装"
+          '
+
+      # ── 打内核配置补丁 ──────────────────────────────────────
+      - name: Patch kernel config (OTBR/BLE/FQ)
+        run: |
+          docker compose exec -T pmos-builder sh /scripts/patch-kernel-otbr.sh
+
+      # ── 更新 APKBUILD checksum ──────────────────────────────
+      - name: Update kernel checksum
+        run: |
+          docker compose exec -T pmos-builder sh -c \
+            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap checksum ${{ env.KERNEL_PKG }}"'
+
+      # ── kconfig 合规检查 ────────────────────────────────────
+      - name: kconfig compliance check
+        run: |
+          docker compose exec -T pmos-builder sh -c \
+            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap kconfig check ${{ env.KERNEL_PKG }}"'
+
+      # ── 构建内核包 ──────────────────────────────────────────
+      - name: Build kernel
+        run: |
+          FORCE=""
+          if [ "${{ inputs.force_rebuild }}" = "true" ]; then
+            FORCE="--force"
+          fi
+          docker compose exec -T pmos-builder sh -c \
+            "su -s /bin/sh pmbuild -c \"export HOME=/work/pmbootstrap; pmbootstrap build $FORCE ${{ env.KERNEL_PKG }}\""
+
+      # ── 安装 tar wrapper（chroot 刚创建，再次确保） ─────────
+      - name: Re-apply tar wrapper after chroot init
+        run: |
+          docker compose exec -T pmos-builder sh -c '
+            if [ -f /work/pmbootstrap/chroot_native/usr/bin/tar.real ]; then
+              cp /scripts/tar-wrapper.sh /work/pmbootstrap/chroot_native/usr/bin/tar
+              chmod +x /work/pmbootstrap/chroot_native/usr/bin/tar
+            fi
+          '
+
+      # ── 收集构建产物 ────────────────────────────────────────
+      - name: Collect built APKs
+        run: |
+          mkdir -p artifacts
+          find work/pmbootstrap/packages/edge/aarch64/ \
+            -name "linux-postmarketos-mediatek-mt81*.apk" \
+            -exec cp {} artifacts/ \; 2>/dev/null || true
+          find work/pmbootstrap/packages/ \
+            -name "linux-postmarketos-mediatek-mt81*.apk" \
+            -exec cp {} artifacts/ \; 2>/dev/null || true
+          ls -lh artifacts/ || echo "未找到 APK 文件"
+
+      - name: Upload kernel APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ env.KERNEL_PKG }}-${{ github.sha }}
+          path: artifacts/*.apk
+          if-no-files-found: warn
+          retention-days: 30
