@@ -208,9 +208,16 @@ done
 # ── 更新 APKBUILD checksum（配置文件已修改，必须更新否则构建失败） ──────
 echo "=== 更新 APKBUILD checksum ==="
 if command -v pmbootstrap >/dev/null 2>&1; then
-    pmbootstrap checksum linux-postmarketos-mediatek-mt81 \
-        && echo "✓ checksum 已更新" \
-        || echo "⚠ checksum 更新失败，请手动运行: pmbootstrap checksum linux-postmarketos-mediatek-mt81"
+    # pmbootstrap 3.9.0 不允许以 root 运行，需以 pmbuild 用户执行
+    if id pmbuild >/dev/null 2>&1; then
+        su -s /bin/sh pmbuild -c \
+            "export HOME=/work/pmbootstrap; pmbootstrap checksum linux-postmarketos-mediatek-mt81" \
+            && echo "✓ checksum 已更新" \
+            || echo "⚠ checksum 更新失败，请手动运行: su -s /bin/sh pmbuild -c 'export HOME=/work/pmbootstrap; pmbootstrap checksum linux-postmarketos-mediatek-mt81'"
+    else
+        echo "⚠ pmbuild 用户不存在，跳过 checksum 更新"
+        echo "  请先运行 init-pmbootstrap.sh，再手动更新 checksum"
+    fi
 else
     echo "⚠ pmbootstrap 未在 PATH 中，跳过 checksum 更新"
     echo "  请手动运行: pmbootstrap checksum linux-postmarketos-mediatek-mt81"

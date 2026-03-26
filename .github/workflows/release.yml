@@ -106,7 +106,7 @@ jobs:
       - name: Init native chroot and apply tar wrapper
         run: |
           docker compose exec -T pmos-builder sh -c \
-            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap build_init ${{ env.KERNEL_PKG }}"'
+            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap build_init"'
           docker compose exec -T pmos-builder sh -c '
             CHROOT_TAR="/work/pmbootstrap/chroot_native/usr/bin/tar"
             if [ -f "$CHROOT_TAR" ] && [ ! -f "${CHROOT_TAR}.real" ]; then
