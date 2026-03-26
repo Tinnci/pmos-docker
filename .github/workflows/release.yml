@@ -24,7 +24,7 @@ env:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
     permissions:
       contents: write   # 创建 release 需要
 
