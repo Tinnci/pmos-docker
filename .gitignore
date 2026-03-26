@@ -2,6 +2,7 @@
 work/
 cache/
 ccache/
+artifacts/
 
 # ── macOS ────────────────────────────────────────────────────
 .DS_Store
