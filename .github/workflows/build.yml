@@ -133,7 +133,7 @@ jobs:
             docker compose exec -T pmos-builder sh -c '
               su -s /bin/sh pmbuild -c "
                 export HOME=/work/pmbootstrap
-                APORTS=\$(pmbootstrap config aports 2>/dev/null || echo /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports)
+                APORTS=\$(pmbootstrap config aports 2>/dev/null || echo /work/pmbootstrap/cache_git/pmaports)
                 if [ ! -d \"\$APORTS/.git\" ]; then
                   echo pmaports 不存在，重新拉取...
                   pmbootstrap pull

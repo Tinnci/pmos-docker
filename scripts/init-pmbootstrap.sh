@@ -35,14 +35,17 @@ fi
 
 if [ "$ALREADY_INIT" = "false" ]; then
     echo "=== 运行 pmbootstrap init ==="
-    # 策略：先用全默认值完成 init（接受所有提问），再用 pmbootstrap config 修正具体设置。
-    # 原因：git 克隆 pmaports（约2分钟）期间 pmbootstrap 仍在消耗 stdin，
-    # 导致 printf 的定位输入被错误消耗，vendor/device 无法正确传入。
-    # 全默认 init 只需 \n 序列，不受克隆耗时影响。
+    # 策略：在 pmbootstrap init 的前两个提示直接输入正确路径，
+    # 其余提问全部用 \n 接受默认值，再用 pmbootstrap config 修正设备/UI。
+    #
+    # 不能事后用 pmbootstrap config work 修改 work dir！
+    # 原因：pmbootstrap 会尝试将「无 version 文件的目录」migrate 到 v8 → ERROR
+    # 必须在 init 时第一个提示就输入目标路径，pmbootstrap 才会在那里创建正确的 work dir 结构。
     #
     # 实际提示顺序（pmbootstrap 3.9.0，qemu/amd64 默认）：
-    #  1.  work path            → \n
-    #  2.  pmaports path        → \n  (然后 git clone，约2分钟)
+    #  1.  work path            → /work/pmbootstrap        ★ 显式指定！
+    #  2.  pmaports path        → /work/pmbootstrap/cache_git/pmaports  ★ 显式指定！
+    #                            (然后 git clone pmaports，约2分钟)
     #  3.  channel              → \n  (默认 edge)
     #  4.  vendor               → \n  (默认 qemu)
     #  5.  device codename      → \n  (默认 amd64)
@@ -58,17 +61,16 @@ if [ "$ALREADY_INIT" = "false" ]; then
     # 15.  locale               → \n  (默认 en_US)
     # 16.  hostname             → \n  (默认)
     # 17.  build outdated?      → \n  (默认 y)
-    # 额外 3 个 \n 作为余量，防止提示顺序变化
-    printf '\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n' | \
+    # 额外 3 个 \n 余量
+    printf '/work/pmbootstrap\n/work/pmbootstrap/cache_git/pmaports\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n' | \
         su -s /bin/sh pmbuild -c \
         "export HOME=/work/pmbootstrap; export CCACHE_DIR=/ccache; pmbootstrap init"
-    echo "✓ pmbootstrap init 完成（默认配置）"
+    echo "✓ pmbootstrap init 完成（work=/work/pmbootstrap）"
 
-    # 现在用 config 命令修正目标设备和 UI
+    # 用 config 命令修正目标设备和 UI（不再修改 work，init 时已正确设置）
     echo "=== 配置目标设备 ==="
     su -s /bin/sh pmbuild -c "
         export HOME=/work/pmbootstrap
-        pmbootstrap config work /work/pmbootstrap
         pmbootstrap config device google-kukui
         pmbootstrap config ui plasma-mobile
         pmbootstrap config kernel postmarketos-mediatek-mt81
