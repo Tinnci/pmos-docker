@@ -74,8 +74,17 @@ jobs:
 
       - name: Init pmbootstrap
         run: |
-          if [ ! -f work/pmbootstrap/config ]; then
+          CFG_PATH="work/pmbootstrap/.config/pmbootstrap.cfg"
+          if [ ! -f "$CFG_PATH" ]; then
             docker compose exec -T pmos-builder sh /scripts/init-pmbootstrap.sh
+          else
+            docker compose exec -T pmos-builder sh -c '
+              su -s /bin/sh pmbuild -c "
+                export HOME=/work/pmbootstrap
+                APORTS=$(pmbootstrap config aports 2>/dev/null || echo /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports)
+                [ ! -d \"$APORTS/.git\" ] && pmbootstrap pull-aports || true
+              "
+            '
           fi
 
       - name: Patch kernel config

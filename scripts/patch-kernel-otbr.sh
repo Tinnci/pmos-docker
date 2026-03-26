@@ -18,27 +18,40 @@ set -eu
 # 探测 kukui 内核配置文件路径（sh 兼容，不用数组）
 # ────────────────────────────────────────────────────────────
 find_config() {
-    # kukui 使用共享内核 linux-postmarketos-mediatek-mt81
-    for d in \
-        "/work/edge/device/community/linux-postmarketos-mediatek-mt81" \
-        "/work/edge/device/community/linux-postmarketos-mediatek-mt81xx"; do
+    # ── 动态读取 pmbootstrap aports 路径 ────────────────────
+    PMAPORTS_DYNAMIC=""
+    if command -v pmbootstrap >/dev/null 2>&1; then
+        # 尝试以 pmbuild 用户读取（需要 HOME 正确）
+        for _home in /work/pmbootstrap /root /home/pmbuild; do
+            _ap=$(HOME="$_home" pmbootstrap config aports 2>/dev/null || true)
+            if [ -n "$_ap" ] && [ -d "$_ap" ]; then
+                PMAPORTS_DYNAMIC="$_ap"
+                break
+            fi
+        done
+    fi
+
+    # ── 候选路径列表（优先级从高到低） ──────────────────────
+    SEARCH_DIRS="
+        /work/edge/device/community/linux-postmarketos-mediatek-mt81
+        /work/edge/device/community/linux-postmarketos-mediatek-mt81xx
+        /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports/device/community/linux-postmarketos-mediatek-mt81
+        /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports/device/community/linux-postmarketos-mediatek-mt81xx
+        /work/pmbootstrap/cache_git/pmaports/device/community/linux-postmarketos-mediatek-mt81
+    "
+    if [ -n "$PMAPORTS_DYNAMIC" ]; then
+        SEARCH_DIRS="$PMAPORTS_DYNAMIC/device/community/linux-postmarketos-mediatek-mt81
+$SEARCH_DIRS"
+    fi
+
+    for d in $SEARCH_DIRS; do
+        d=$(echo "$d" | tr -d ' ')
+        [ -z "$d" ] && continue
         cfg="$d/config-postmarketos-mediatek-mt81.aarch64"
         if [ -f "$cfg" ]; then
             echo "$cfg"
             return 0
         fi
-    done
-    # fallback：按旧名称搜索
-    for d in \
-        "/work/pmbootstrap/cache_git/pmaports" \
-        "/work/edge"; do
-        for subdir in "device/testing" "device/community" "device/main"; do
-            cfg="$d/$subdir/linux-google-kukui/config-google-kukui.aarch64"
-            if [ -f "$cfg" ]; then
-                echo "$cfg"
-                return 0
-            fi
-        done
     done
     return 1
 }
