@@ -1,7 +1,7 @@
 #!/bin/sh
 # pmbootstrap 初始化脚本（sh 兼容，适配 docker-postmarketos 容器）
 # 目标设备：google-kukui (Chromebook Crane, MT8183, aarch64)
-# 使用 scripts/pmbootstrap.cfg 直接部署配置，不需要交互式 pmbootstrap init
+# 通过 "printf | pmbootstrap init" 非交互式初始化（兼容 pmbootstrap 3.9.0）
 set -e
 
 # 确保 pmbootstrap 可用
@@ -23,40 +23,52 @@ mkdir -p /work/pmbootstrap
 chown -R pmbuild:pmbuild /work/pmbootstrap /ccache 2>/dev/null || true
 
 echo "=== pmbootstrap $(pmbootstrap --version) ==="
-echo "=== 部署配置文件并初始化 pmaports ==="
 
-# ── 部署 pmbootstrap.cfg（替代交互式 pmbootstrap init）────────────────────
-# HOME=/work/pmbootstrap → 配置路径：/work/pmbootstrap/.config/pmbootstrap.cfg
-su -s /bin/sh pmbuild -c "
-export HOME=/work/pmbootstrap
-export CCACHE_DIR=/ccache
-mkdir -p \$HOME/.config
-
-# 如果配置文件已存在且不是从脚本部署的，保留现有配置
-if [ ! -f \$HOME/.config/pmbootstrap.cfg ]; then
-    cp /scripts/pmbootstrap.cfg \$HOME/.config/pmbootstrap.cfg
-    echo '✓ pmbootstrap.cfg 已部署'
-else
-    echo '✓ pmbootstrap.cfg 已存在，跳过'
+# ── 初始化 pmbootstrap（若未初始化or格式不兼容）──────────────────────────
+# 检查方式：能否正确读取 device 配置（3.9.0 读取旧格式 cfg 会报错退出）
+ALREADY_INIT=false
+if su -s /bin/sh pmbuild -c \
+    "export HOME=/work/pmbootstrap; pmbootstrap config device 2>/dev/null" \
+    2>/dev/null | grep -q "google-kukui"; then
+    ALREADY_INIT=true
 fi
 
-# 创建 work 目录
-WORK_DIR=\$(pmbootstrap config work 2>/dev/null || echo /work/pmbootstrap/.local/var/pmbootstrap)
-mkdir -p \"\$WORK_DIR\"
-
-# ── 拉取 pmaports（若未克隆）──────────────────────────────────────────────
-APORTS_DIR=\$(pmbootstrap config aports 2>/dev/null || echo \"\$WORK_DIR/cache_git/pmaports\")
-if [ ! -d \"\$APORTS_DIR/.git\" ]; then
-    echo '正在克隆 pmaports...'
-    pmbootstrap pull-aports
-    echo '✓ pmaports 已克隆'
+if [ "$ALREADY_INIT" = "false" ]; then
+    echo "=== 运行 pmbootstrap init ==="
+    # 18 个输入覆盖所有交互提示（使用默认值或指定值）：
+    #   \n\n\n  = work path, alpine mirror, pmaports mirror（取默认）
+    #   google  = vendor
+    #   kukui   = codename
+    #   \n×13   = kernel, user, password×2, UI, UI extras, packages,
+    #             hostname, timezone, locale, SSH，以及其余默认提示
+    printf '\n\n\ngoogle\nkukui\n\n\n\n\n\n\n\n\n\n\n\n\n\n' | \
+        su -s /bin/sh pmbuild -c \
+        "export HOME=/work/pmbootstrap; export CCACHE_DIR=/ccache; pmbootstrap init"
+    echo "✓ pmbootstrap init 完成"
 else
-    echo '✓ pmaports 已存在，跳过克隆'
+    echo "✓ pmbootstrap 已初始化 (device=google-kukui)"
+fi
+
+echo ""
+echo "=== 检查 pmaports ==="
+su -s /bin/sh pmbuild -c "
+export HOME=/work/pmbootstrap
+APORTS_DIR=\$(pmbootstrap config aports 2>/dev/null || \
+    echo /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports)
+if [ ! -d \"\$APORTS_DIR/.git\" ]; then
+    echo '正在拉取 pmaports...'
+    pmbootstrap pull
+    echo '✓ pmaports 已拉取'
+else
+    echo '✓ pmaports 已存在: '\$APORTS_DIR
 fi
 " 2>&1
 
 echo ""
-echo "=== 初始化完成，当前配置 ==="
-su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap config" 2>&1 || true
-echo ""
-su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap config aports" 2>&1 | xargs -I{} echo "pmaports: {}" || true
+echo "=== 初始化完成 ==="
+su -s /bin/sh pmbuild -c \
+    "export HOME=/work/pmbootstrap; pmbootstrap config device" 2>&1 \
+    | xargs echo "device:" || true
+su -s /bin/sh pmbuild -c \
+    "export HOME=/work/pmbootstrap; pmbootstrap config aports" 2>&1 \
+    | xargs -I{} echo "pmaports: {}" || true

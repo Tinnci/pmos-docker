@@ -7,9 +7,9 @@
 #   - 问题：内核缺少多播路由支持，导致 Home Assistant Thread 包转发失败
 #
 # 使用方式（在容器内运行）：
-#   1. 确保已 pmbootstrap init + pmbootstrap pull-aports
+#   1. 确保已 pmbootstrap init + pmbootstrap pull
 #   2. 运行本脚本：bash /scripts/patch-kernel-otbr.sh
-#   3. 构建内核：pmbootstrap build linux-google-kukui
+#   3. 构建内核：pmbootstrap build linux-postmarketos-mediatek-mt81
 #   4. 刷入：pmbootstrap flasher flash_kernel --device google-kukui
 #
 set -eu
@@ -58,7 +58,7 @@ $SEARCH_DIRS"
 
 CONFIG_FILE="$(find_config)" || {
     echo "ERROR: 未找到 google-kukui 内核配置文件。"
-    echo "请先运行：pmbootstrap pull-aports"
+    echo "请先运行：pmbootstrap pull"
     exit 1
 }
 

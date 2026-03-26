@@ -63,26 +63,27 @@ jobs:
             sleep 10
           done
 
-      # ── 初始化 pmbootstrap（如 work/ 目录为空时） ──────────
+      # ── 初始化 pmbootstrap（若未初始化或 cfg 格式过旧） ──────
       - name: Init pmbootstrap
         run: |
-          # 判断依据：pmbootstrap.cfg 是否已部署（work/ 由 cache 恢复）
-          CFG_PATH="work/pmbootstrap/.config/pmbootstrap.cfg"
-          if [ ! -f "$CFG_PATH" ]; then
-            echo "首次初始化 pmbootstrap..."
+          # 通过 pmbootstrap config device 判断是否已正确初始化
+          # （3.9.0 读取旧格式 cfg 会报错，比文件存在检查更可靠）
+          if ! docker compose exec -T pmos-builder sh -c \
+              'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap config device 2>/dev/null"' \
+              2>/dev/null | grep -q 'google-kukui'; then
+            echo "运行 init-pmbootstrap.sh..."
             docker compose exec -T pmos-builder sh /scripts/init-pmbootstrap.sh
           else
             echo "pmbootstrap 已初始化，检查 pmaports..."
-            # pmaports 可能因 cache miss 而丢失，确保存在
             docker compose exec -T pmos-builder sh -c '
               su -s /bin/sh pmbuild -c "
                 export HOME=/work/pmbootstrap
-                APORTS=$(pmbootstrap config aports 2>/dev/null || echo /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports)
-                if [ ! -d \"$APORTS/.git\" ]; then
-                  echo \"pmaports 不存在，重新拉取...\"
-                  pmbootstrap pull-aports
+                APORTS=\$(pmbootstrap config aports 2>/dev/null || echo /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports)
+                if [ ! -d \"\$APORTS/.git\" ]; then
+                  echo pmaports 不存在，重新拉取...
+                  pmbootstrap pull
                 else
-                  echo \"pmaports 已存在: $APORTS\"
+                  echo pmaports 已存在: \$APORTS
                 fi
               "
             '
@@ -105,6 +106,28 @@ jobs:
           docker compose exec -T pmos-builder sh -c \
             'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap kconfig check ${{ env.KERNEL_PKG }}"'
 
+      # ── 初始化 native chroot + 安装 tar wrapper ─────────────
+      # build_init 创建 chroot_native（含 gcc-aarch64 工具链）但不编译内核
+      # tar wrapper 在此之后安装，修复 Docker overlay2 解压内核 tarball 的伪错误
+      - name: Init native chroot and apply tar wrapper
+        run: |
+          docker compose exec -T pmos-builder sh -c \
+            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap build_init ${{ env.KERNEL_PKG }}"'
+          docker compose exec -T pmos-builder sh -c '
+            CHROOT_TAR="/work/pmbootstrap/chroot_native/usr/bin/tar"
+            if [ -f "$CHROOT_TAR" ] && [ ! -f "${CHROOT_TAR}.real" ]; then
+              cp "$CHROOT_TAR" "${CHROOT_TAR}.real"
+              cp /scripts/tar-wrapper.sh "$CHROOT_TAR"
+              chmod +x "$CHROOT_TAR"
+              echo "✓ tar wrapper 已安装"
+            elif [ -f "${CHROOT_TAR}.real" ]; then
+              echo "✓ tar wrapper 已存在"
+            else
+              echo "ERROR: chroot_native 未正确创建"
+              exit 1
+            fi
+          '
+
       # ── 构建内核包 ──────────────────────────────────────────
       - name: Build kernel
         run: |
@@ -114,20 +137,6 @@ jobs:
           fi
           docker compose exec -T pmos-builder sh -c \
             "su -s /bin/sh pmbuild -c \"export HOME=/work/pmbootstrap; pmbootstrap build $FORCE ${{ env.KERNEL_PKG }}\""
-
-      # ── 安装 tar wrapper（chroot 刚创建，再次确保） ─────────
-      # patch-kernel-otbr.sh 里已自动处理，此步作为双保险
-      - name: Re-apply tar wrapper after chroot init
-        run: |
-          docker compose exec -T pmos-builder sh -c '
-            CHROOT_TAR="/work/pmbootstrap/chroot_native/usr/bin/tar"
-            if [ -f "$CHROOT_TAR" ] && [ ! -f "${CHROOT_TAR}.real" ]; then
-              cp "$CHROOT_TAR" "${CHROOT_TAR}.real"
-              cp /scripts/tar-wrapper.sh "$CHROOT_TAR"
-              chmod +x "$CHROOT_TAR"
-              echo "tar wrapper 已安装"
-            fi
-          '
 
       # ── 收集构建产物 ────────────────────────────────────────
       - name: Collect built APKs
