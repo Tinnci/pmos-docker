@@ -40,21 +40,26 @@ if [ "$ALREADY_INIT" = "false" ]; then
     # 导致 printf 的定位输入被错误消耗，vendor/device 无法正确传入。
     # 全默认 init 只需 \n 序列，不受克隆耗时影响。
     #
-    # 实际提示顺序（pmbootstrap 3.9.0）：
-    #  1. work path            → \n (默认)
-    #  2. pmaports path        → \n (默认，然后开始 git clone，约2分钟)
-    #  3. channel              → \n (默认 edge)
-    #  4. vendor               → \n (默认 qemu)
-    #  5. device codename      → \n (默认 amd64)
-    #  6. provider ×3          → \n\n\n (audio/wifi/usb，各取默认)
-    #  7. UI                   → \n (默认 console)
-    #  8. systemd?             → \n (默认)
-    #  9. change extra opts?   → \n (默认 n)
-    # 10. extra packages       → \n (默认 none)
-    # 11. locale               → \n (默认 en_US)
-    # 12. hostname             → \n (默认)
-    # 13. build outdated?      → \n (默认 y)
-    printf '\n\n\n\n\n\n\n\n\n\n\n\n\n' | \
+    # 实际提示顺序（pmbootstrap 3.9.0，qemu/amd64 默认）：
+    #  1.  work path            → \n
+    #  2.  pmaports path        → \n  (然后 git clone，约2分钟)
+    #  3.  channel              → \n  (默认 edge)
+    #  4.  vendor               → \n  (默认 qemu)
+    #  5.  device codename      → \n  (默认 amd64)
+    #  6.  kernel               → \n  (qemu 专有提示，默认 stable)
+    #  7.  username             → \n  (默认 user)
+    #  8.  provider audio       → \n  (默认 pulseaudio)
+    #  9.  provider wifi        → \n  (默认 wpa_supplicant)
+    # 10.  provider usb-moded   → \n  (默认 developer)
+    # 11.  UI                   → \n  (默认 console)
+    # 12.  systemd?             → \n  (默认)
+    # 13.  change extra opts?   → \n  (默认 n)
+    # 14.  extra packages       → \n  (默认 none)
+    # 15.  locale               → \n  (默认 en_US)
+    # 16.  hostname             → \n  (默认)
+    # 17.  build outdated?      → \n  (默认 y)
+    # 额外 3 个 \n 作为余量，防止提示顺序变化
+    printf '\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n' | \
         su -s /bin/sh pmbuild -c \
         "export HOME=/work/pmbootstrap; export CCACHE_DIR=/ccache; pmbootstrap init"
     echo "✓ pmbootstrap init 完成（默认配置）"
