@@ -93,6 +93,16 @@ kset_m() {
     # 若已经是 =m，不需要改动
 }
 
+# 显式禁用某项（=n / is not set）
+kset_n() {
+    local key="$1"
+    if grep -q "^${key}=[ym]" "$CONFIG_FILE"; then
+        sed -i "s|^${key}=[ym]|# ${key} is not set|" "$CONFIG_FILE"
+    elif ! grep -q "# ${key} is not set" "$CONFIG_FILE"; then
+        echo "# ${key} is not set" >> "$CONFIG_FILE"
+    fi
+}
+
 echo ""
 echo "=== 添加 OTBR / Matter / Docker / BLE 内核配置 ==="
 
@@ -148,6 +158,11 @@ kset_m CONFIG_NF_TABLES_IPV4
 kset_m CONFIG_NF_TABLES_IPV6
 kset_m CONFIG_NFT_NAT
 kset_m CONFIG_NFT_MASQ
+# macOS APFS 大小写不敏感文件系统问题：
+# xt_TCPMSS.c（TARGET）和 xt_tcpmss.c（MATCH）在 macOS 上是同一物理文件
+# readdir() 只返回小写名，make 找不到 xt_TCPMSS.o 的规则 → 构建失败
+# TCPMSS TARGET 非 OTBR/Thread 必需，禁用之；MATCH 模块保持 =m 不受影响
+kset_n CONFIG_NETFILTER_XT_TARGET_TCPMSS
 
 # ────────────────────────────────────────────────────────────
 # 5. 容器网络（OTBR 跑在 kukui 本机的 Docker 里需要）
