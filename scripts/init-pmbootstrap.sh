@@ -68,11 +68,12 @@ if [ "$ALREADY_INIT" = "false" ]; then
     echo "=== 配置目标设备 ==="
     su -s /bin/sh pmbuild -c "
         export HOME=/work/pmbootstrap
+        pmbootstrap config work /work/pmbootstrap
         pmbootstrap config device google-kukui
         pmbootstrap config ui plasma-mobile
         pmbootstrap config kernel postmarketos-mediatek-mt81
         pmbootstrap config ccache_size 5G
-        echo '✓ device=google-kukui, ui=plasma-mobile'
+        echo '✓ device=google-kukui, ui=plasma-mobile, work=/work/pmbootstrap'
         pmbootstrap config device
     "
 else

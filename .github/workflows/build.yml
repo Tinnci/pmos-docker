@@ -142,11 +142,14 @@ jobs:
       - name: Collect built APKs
         run: |
           mkdir -p artifacts
-          find work/pmbootstrap/packages/edge/aarch64/ \
-            -name "linux-postmarketos-mediatek-mt81*.apk" \
-            -exec cp {} artifacts/ \; 2>/dev/null || true
-          find work/pmbootstrap/packages/ \
-            -name "linux-postmarketos-mediatek-mt81*.apk" \
+          # 用 docker exec 在容器内查找 APK，避免宿主机路径与 pmbootstrap work dir 不一致
+          docker compose exec -T pmos-builder sh -c \
+            'find /work -name "linux-postmarketos-mediatek-mt81*.apk" 2>/dev/null' \
+            | while IFS= read -r apk; do
+              docker compose cp "pmos-builder:${apk}" artifacts/ 2>/dev/null || true
+            done
+          # 备用：直接在宿主机挂载的 work/ 目录下搜索
+          find work/ -name "linux-postmarketos-mediatek-mt81*.apk" \
             -exec cp {} artifacts/ \; 2>/dev/null || true
           ls -lh artifacts/ || echo "未找到 APK 文件"
 

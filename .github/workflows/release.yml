@@ -129,14 +129,20 @@ jobs:
         id: collect
         run: |
           mkdir -p release-assets
-          find work/pmbootstrap/packages/ \
-            -name "linux-postmarketos-mediatek-mt81*.apk" \
-            -exec cp {} release-assets/ \;
+          # 用 docker exec 在容器内查找 APK，避免宿主机路径与 pmbootstrap work dir 不一致
+          docker compose exec -T pmos-builder sh -c \
+            'find /work -name "linux-postmarketos-mediatek-mt81*.apk" 2>/dev/null' \
+            | while IFS= read -r apk; do
+              docker compose cp "pmos-builder:${apk}" release-assets/ 2>/dev/null || true
+            done
+          # 备用：直接在宿主机挂载的 work/ 目录下搜索
+          find work/ -name "linux-postmarketos-mediatek-mt81*.apk" \
+            -exec cp {} release-assets/ \; 2>/dev/null || true
           # 生成 SHA256 校验文件
           cd release-assets
           sha256sum *.apk > SHA256SUMS 2>/dev/null || true
           ls -lh
-          echo "files=$(ls release-assets/*.apk 2>/dev/null | wc -l)" >> $GITHUB_OUTPUT
+          echo "files=$(ls *.apk 2>/dev/null | wc -l)" >> $GITHUB_OUTPUT
 
       # ── 生成 changelog（基于 git log） ───────────────────────
       - name: Generate changelog
