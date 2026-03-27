@@ -186,12 +186,10 @@ jobs:
       # ── 构建内核包 ──────────────────────────────────────────
       - name: Build kernel
         run: |
-          FORCE=""
-          if [ "${{ inputs.force_rebuild }}" = "true" ]; then
-            FORCE="--force"
-          fi
+          # 总是 --force：每次 CI 都重新编译
+          # 原因：pmaports 缓存命中时 pmbootstrap 认为包已是最新，跳过编译导致无 APK 产出
           docker compose exec -T pmos-builder sh -c \
-            "su -s /bin/sh pmbuild -c \"export HOME=/work/pmbootstrap; pmbootstrap build $FORCE ${{ env.KERNEL_PKG }}\""
+            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap build --force ${{ env.KERNEL_PKG }}"'
 
       # ── 收集构建产物 ────────────────────────────────────────
       - name: Collect built APKs
