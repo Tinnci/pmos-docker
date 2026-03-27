@@ -158,6 +158,18 @@ kset_m CONFIG_NF_TABLES_IPV4
 kset_m CONFIG_NF_TABLES_IPV6
 kset_m CONFIG_NFT_NAT
 kset_m CONFIG_NFT_MASQ
+# ── ipset 支持（OTBR 用 ipset 管理 Thread 防火墙规则） ──────────────────
+kset_m CONFIG_IP_SET                   # ipset 核心
+kset_m CONFIG_IP_SET_HASH_IP           # hash:ip 类型（最常用）
+kset_m CONFIG_IP_SET_HASH_NET          # hash:net 类型
+kset_m CONFIG_IP_SET_HASH_NETPORT      # hash:net,port 类型
+kset_m CONFIG_IP_SET_LIST_SET          # list:set 类型
+kset_m CONFIG_NETFILTER_XT_SET         # iptables -m set（xt_set 匹配模块）
+# ── 其他 xt 匹配模块（pkttype 用于 Thread 多播包过滤） ──────────────────
+kset_m CONFIG_NETFILTER_XT_MATCH_PKTTYPE  # --pkttype multicast/broadcast
+# ── /proc/config.gz（运行时查看内核配置，便于排查） ──────────────────────
+kset_y CONFIG_IKCONFIG
+kset_y CONFIG_IKCONFIG_PROC
 # 注：CONFIG_NETFILTER_XT_TARGET_TCPMSS 保持 =m（pmaports community_various 要求）
 # macOS APFS 大小写不敏感会导致本地构建 xt_TCPMSS.o 失败，但 CI（Linux ext4）不存在该问题
 # kset_n CONFIG_NETFILTER_XT_TARGET_TCPMSS  ← 已移除，避免 CI kconfig check 失败
@@ -213,7 +225,11 @@ for key in \
     CONFIG_VETH \
     CONFIG_BRIDGE \
     CONFIG_BT_LE \
-    CONFIG_NET_SCH_FQ_CODEL; do
+    CONFIG_NET_SCH_FQ_CODEL \
+    CONFIG_IP_SET \
+    CONFIG_NETFILTER_XT_SET \
+    CONFIG_NETFILTER_XT_MATCH_PKTTYPE \
+    CONFIG_IKCONFIG_PROC; do
     val=$(grep "^${key}=" "$CONFIG_FILE" 2>/dev/null || echo "(未设置)")
     printf "  %-45s %s\n" "$key" "$val"
 done
