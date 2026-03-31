@@ -69,7 +69,15 @@ jobs:
           path: cache/
           key: pip-pmos-${{ env.KERNEL_PKG }}
 
-      # ── 缓存 3: 内核源码 tarball（~147MB，省去每次重新下载）
+      # ── 缓存 3: apk 包缓存（避免每次重新下载 pmbootstrap+工具链，节省约 5 分钟）
+      - name: Restore apk cache
+        uses: actions/cache@v4
+        with:
+          path: cache/apk/
+          key: apk-pmos-${{ env.YM }}
+          restore-keys: apk-pmos-
+
+      # ── 缓存 4: 内核源码 tarball（~147MB，省去每次重新下载）
       - name: Restore distfiles cache
         uses: actions/cache@v4
         with:
@@ -77,7 +85,7 @@ jobs:
           key: distfiles-${{ env.KERNEL_PKG }}
           restore-keys: distfiles-
 
-      # ── 缓存 4: pmaports git 仓库（省去每次重新 clone ~3min）
+      # ── 缓存 5: pmaports git 仓库（省去每次重新 clone ~3min）
       # 月度轮转 key 保证定期拉取最新；pmbootstrap pull 会增量更新
       - name: Restore pmaports cache
         uses: actions/cache@v4
@@ -88,7 +96,7 @@ jobs:
             pmaports-${{ env.KERNEL_PKG }}-
             pmaports-
 
-      # ── 缓存 5: Docker 镜像（172MB，省去每次重新拉取）────────
+      # ── 缓存 6: Docker 镜像（172MB，省去每次重新拉取）────────
       # 月度轮转 key 保证定期拉取最新 edge 版本
       - name: Cache Docker image
         uses: actions/cache@v4
@@ -121,15 +129,22 @@ jobs:
       # ── 启动 pmos-builder 容器 ──────────────────────────────
       - name: Start pmos-builder container
         run: |
+          mkdir -p cache/apk
           docker compose up -d
-          # 等待 bootstrap 脚本完成（pmbootstrap + 工具安装）
-          echo "等待容器初始化..."
-          for i in $(seq 1 30); do
-            if docker compose exec -T pmos-builder sh -c 'which pmbootstrap' >/dev/null 2>&1; then
-              echo "pmbootstrap 准备就绪"
+          echo "等待 bootstrap-pmbootstrap.sh 完成..."
+          # 检测 /tmp/bootstrap-done 标记（bootstrap 完成时写入），轮询间隔 2s
+          # 最多等 180s（90 次 × 2s）；超时后打印日志便于排查
+          for i in $(seq 1 90); do
+            if docker compose exec -T pmos-builder sh -c 'test -f /tmp/bootstrap-done' >/dev/null 2>&1; then
+              echo "✓ bootstrap 完成（迭代 ${i}，约 $((i * 2))s）"
               break
             fi
-            sleep 10
+            if [ "$i" -eq 90 ]; then
+              echo "⚠ bootstrap 超时（180s），打印容器日志："
+              docker compose logs --tail=30 pmos-builder
+              exit 1
+            fi
+            sleep 2
           done
 
       # ── 初始化 pmbootstrap（若未初始化或 cfg 格式过旧） ──────
