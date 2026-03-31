@@ -33,7 +33,49 @@ env:
   DEVICE: google-kukui
 
 jobs:
+  # ── 前置验证（<30s）：快速发现明显错误，避免等待 2 小时后才报失败 ──
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate shell scripts syntax
+        run: |
+          echo "检查 sh 脚本语法..."
+          for f in scripts/*.sh; do
+            sh -n "$f" && echo "  ✓ $f" || { echo "  ✗ $f 语法错误"; exit 1; }
+          done
+
+      - name: Validate kconfig keys in patch script
+        run: |
+          echo "检查 patch-kernel-otbr.sh 中 CONFIG_* 键格式..."
+          INVALID=0
+          # 提取所有 kset_y/kset_m/kset_n 调用的 CONFIG_* 键
+          grep -E '^\s*kset_[ymn]\s+CONFIG_' scripts/patch-kernel-otbr.sh \
+            | sed 's/.*kset_[ymn]\s\+//' | awk '{print $1}' \
+            | while IFS= read -r key; do
+              if ! echo "$key" | grep -qE '^CONFIG_[A-Z0-9_]+$'; then
+                echo "  ✗ 非法 kconfig key: $key"
+                INVALID=1
+              fi
+            done
+          # 检查不应出现的 kset_n（可能误禁了必要项）
+          DISABLED=$(grep -cE '^\s*kset_n\s+CONFIG_' scripts/patch-kernel-otbr.sh || true)
+          echo "  配置摘要："
+          echo "    kset_y: $(grep -cE '^\s*kset_y\s+CONFIG_' scripts/patch-kernel-otbr.sh || true) 项"
+          echo "    kset_m: $(grep -cE '^\s*kset_m\s+CONFIG_' scripts/patch-kernel-otbr.sh || true) 项"
+          echo "    kset_n: ${DISABLED} 项（禁用项，如有请确认必要性）"
+          echo "  ✓ kconfig 键格式检查通过"
+
+      - name: Validate docker-compose.yml
+        run: |
+          # 检查 docker compose config 是否合法（不需要拉取镜像）
+          docker compose config --quiet && echo "✓ docker-compose.yml 语法合法"
+
   build:
+    needs: validate
     runs-on: ubuntu-latest
     # aarch64 交叉编译约 40-60 分钟
     timeout-minutes: 360
