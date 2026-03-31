@@ -46,3 +46,11 @@ su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap flasher fla
 | TUN 设备 | `TUN` | wpan0/tun0 Thread 接口 |
 | Netfilter | `NF_NAT`, `NFT_MASQ` 等 | NAT64 / iptables 防火墙 |
 | USB Serial | `USB_SERIAL_CP210X`, `USB_ACM` | Thread NCP/RCP 串口通信 |
+
+# 方案A：设备已运行pmOS（USB连接，172.16.42.1）
+scp artifacts/linux-postmarketos-mediatek-mt81-6.18.13-r0.apk user@172.16.42.1:
+ssh user@172.16.42.1 "sudo apk add --allow-untrusted ~/linux-postmarketos-mediatek-mt81-6.18.13-r0.apk && sudo reboot"
+
+# 方案B：通过pmbootstrap flasher（Fastboot模式）
+docker exec pmos-builder sh -c \
+  'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap flasher flash_kernel"'

@@ -22,9 +22,17 @@ env:
   DEVICE: google-kukui
 
 jobs:
-  build-and-release:
+  # ── 阶段1：复用 build.yml 构建内核（Aggregate Root 边界：Release 不拥有 Build 逻辑）
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      force_rebuild: true
+
+  # ── 阶段2：消费 build 产物，创建 GitHub Release
+  release:
+    needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 15
     permissions:
       contents: write   # 创建 release 需要
 
@@ -43,164 +51,25 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
 
-      # 月份标识用于缓存 key 自动轮转
-      - name: Set monthly cache key
-        run: echo "YM=$(date +%Y%m)" >> $GITHUB_ENV
-
-      # ── 缓存 1: ccache（run_id 滚动，不随 patch 变化失效）──
-      - name: Restore ccache
-        uses: actions/cache@v4
+      # ── 下载 build 阶段产出的 APK artifact ─────────────────
+      - name: Download kernel APKs
+        uses: actions/download-artifact@v4
         with:
-          path: ccache/
-          key: ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-
-            ccache-${{ env.KERNEL_PKG }}-
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: release-assets/
 
-      # ── 缓存 2: pip ─────────────────────────────────────────
-      - name: Restore pip cache
-        uses: actions/cache@v4
-        with:
-          path: cache/
-          key: pip-pmos-${{ env.KERNEL_PKG }}
-
-      # ── 缓存 3: 内核源码 tarball（~147MB）────────────────────
-      - name: Restore distfiles cache
-        uses: actions/cache@v4
-        with:
-          path: work/pmbootstrap/cache_distfiles/
-          key: distfiles-${{ env.KERNEL_PKG }}
-          restore-keys: distfiles-
-
-      # ── 缓存 4: pmaports git 仓库（月度轮转）─────────────────
-      - name: Restore pmaports cache
-        uses: actions/cache@v4
-        with:
-          path: work/pmbootstrap/cache_git/
-          key: pmaports-${{ env.KERNEL_PKG }}-${{ env.YM }}
-          restore-keys: |
-            pmaports-${{ env.KERNEL_PKG }}-
-            pmaports-
-
-      # ── 缓存 5: Docker 镜像（172MB，月度轮转）────────────────
-      - name: Cache Docker image
-        uses: actions/cache@v4
-        with:
-          path: /tmp/pmos-image.tar.gz
-          key: docker-pmos-${{ env.YM }}-${{ hashFiles('docker-compose.yml') }}
-          restore-keys: |
-            docker-pmos-${{ env.YM }}-
-            docker-pmos-
-
-      - name: Load or pull Docker image
+      # ── 生成 SHA256 校验文件 ────────────────────────────────
+      - name: Generate checksums
         run: |
-          IMAGE=$(grep 'image:' docker-compose.yml | awk '{print $2}' | head -1)
-          if [ -f /tmp/pmos-image.tar.gz ]; then
-            echo "从缓存加载 Docker 镜像..."
-            docker load < /tmp/pmos-image.tar.gz
-          else
-            echo "拉取 Docker 镜像: $IMAGE"
-            docker pull "$IMAGE"
-            echo "保存镜像至缓存..."
-            docker save "$IMAGE" | gzip > /tmp/pmos-image.tar.gz
-          fi
-
-      # ── binfmt_misc ─────────────────────────────────────────
-      - name: Register binfmt_misc for aarch64
-        run: |
-          sudo apt-get install -y qemu-user-static binfmt-support
-          sudo update-binfmts --enable qemu-aarch64
-
-      # ── 启动容器并等待初始化 ────────────────────────────────
-      - name: Start pmos-builder container
-        run: |
-          docker compose up -d
-          for i in $(seq 1 30); do
-            if docker compose exec -T pmos-builder sh -c 'which pmbootstrap' >/dev/null 2>&1; then
-              echo "Container ready"
-              break
-            fi
-            sleep 10
-          done
-
-      - name: Init pmbootstrap
-        run: |
-          if ! docker compose exec -T pmos-builder sh -c \
-              'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap config device 2>/dev/null"' \
-              2>/dev/null | grep -q 'google-kukui'; then
-            docker compose exec -T pmos-builder sh /scripts/init-pmbootstrap.sh
-          else
-            echo "pmbootstrap 已初始化，检查 pmaports..."
-            docker compose exec -T pmos-builder sh -c '
-              su -s /bin/sh pmbuild -c "
-                export HOME=/work/pmbootstrap
-                APORTS=\$(pmbootstrap config aports 2>/dev/null || echo /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports)
-                [ ! -d \"\$APORTS/.git\" ] && pmbootstrap pull || true
-              "
-            '
-          fi
-
-      - name: Patch kernel config
-        run: |
-          docker compose exec -T pmos-builder sh /scripts/patch-kernel-otbr.sh
-
-      - name: Update checksum
-        run: |
-          docker compose exec -T pmos-builder sh -c \
-            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap checksum ${{ env.KERNEL_PKG }}"'
-
-      - name: kconfig check
-        run: |
-          docker compose exec -T pmos-builder sh -c \
-            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap kconfig check ${{ env.KERNEL_PKG }}"'
-
-      - name: Init native chroot and apply tar wrapper
-        run: |
-          docker compose exec -T pmos-builder sh -c \
-            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap build_init"'
-          docker compose exec -T pmos-builder sh -c '
-            CHROOT_TAR="/work/pmbootstrap/chroot_native/usr/bin/tar"
-            if [ -f "$CHROOT_TAR" ] && [ ! -f "${CHROOT_TAR}.real" ]; then
-              cp "$CHROOT_TAR" "${CHROOT_TAR}.real"
-              cp /scripts/tar-wrapper.sh "$CHROOT_TAR"
-              chmod +x "$CHROOT_TAR"
-              echo "✓ tar wrapper 已安装"
-            elif [ -f "${CHROOT_TAR}.real" ]; then
-              echo "✓ tar wrapper 已存在"
-            fi
-          '
-
-      - name: Build kernel
-        run: |
-          docker compose exec -T pmos-builder sh -c \
-            'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap build --force ${{ env.KERNEL_PKG }}"'
-
-      # ── 收集产物 ─────────────────────────────────────────────
-      - name: Collect APKs
-        id: collect
-        run: |
-          mkdir -p release-assets
-          # 用 docker exec 在容器内查找 APK，避免宿主机路径与 pmbootstrap work dir 不一致
-          docker compose exec -T pmos-builder sh -c \
-            'find /work -name "linux-postmarketos-mediatek-mt81*.apk" 2>/dev/null' \
-            | while IFS= read -r apk; do
-              docker compose cp "pmos-builder:${apk}" release-assets/ 2>/dev/null || true
-            done
-          # 备用：直接在宿主机挂载的 work/ 目录下搜索
-          find work/ -name "linux-postmarketos-mediatek-mt81*.apk" \
-            -exec cp {} release-assets/ \; 2>/dev/null || true
-          # 生成 SHA256 校验文件
           cd release-assets
           sha256sum *.apk > SHA256SUMS 2>/dev/null || true
           ls -lh
-          echo "files=$(ls *.apk 2>/dev/null | wc -l)" >> $GITHUB_OUTPUT
 
       # ── 生成 changelog（基于 git log） ───────────────────────
       - name: Generate changelog
         id: changelog
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
-          # 找上一个 tag
           PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1 || echo "")
           if [ -n "$PREV_TAG" ]; then
             LOG=$(git log --oneline "${PREV_TAG}..HEAD" 2>/dev/null | head -30)
@@ -208,7 +77,6 @@ jobs:
             LOG=$(git log --oneline -20 2>/dev/null)
           fi
 
-          # 构建 release body
           cat > /tmp/release-body.md << RELEOF
           ## postmarketOS 内核 ${TAG} — google-kukui (MT8183)
 
@@ -228,7 +96,6 @@ jobs:
 
           ### 安装方式
           \`\`\`sh
-          # 把 .apk 推送到设备后：
           sudo apk add --allow-untrusted linux-postmarketos-mediatek-mt81-*.apk
           # 或通过 pmbootstrap 刷入：
           pmbootstrap flasher flash_kernel --device google-kukui
@@ -253,13 +120,12 @@ jobs:
             PRERELEASE="--prerelease"
           fi
 
-          # 如果是 workflow_dispatch 并且 tag 不存在，先创建 tag
+          # workflow_dispatch 时 tag 可能不存在，先创建
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             git tag "$TAG" 2>/dev/null || true
             git push origin "$TAG" 2>/dev/null || true
           fi
 
-          # 创建 Release 并上传产物
           gh release create "$TAG" \
             --title "pmos kernel ${TAG} (google-kukui OTBR+BLE)" \
             --notes-file "${{ steps.changelog.outputs.body_file }}" \

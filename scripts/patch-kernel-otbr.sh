@@ -33,11 +33,8 @@ find_config() {
 
     # ── 候选路径列表（优先级从高到低） ──────────────────────
     SEARCH_DIRS="
-        /work/edge/device/community/linux-postmarketos-mediatek-mt81
-        /work/edge/device/community/linux-postmarketos-mediatek-mt81xx
-        /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports/device/community/linux-postmarketos-mediatek-mt81
-        /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports/device/community/linux-postmarketos-mediatek-mt81xx
         /work/pmbootstrap/cache_git/pmaports/device/community/linux-postmarketos-mediatek-mt81
+        /work/pmbootstrap/.local/var/pmbootstrap/cache_git/pmaports/device/community/linux-postmarketos-mediatek-mt81
     "
     if [ -n "$PMAPORTS_DYNAMIC" ]; then
         SEARCH_DIRS="$PMAPORTS_DYNAMIC/device/community/linux-postmarketos-mediatek-mt81
@@ -234,43 +231,11 @@ for key in \
     printf "  %-45s %s\n" "$key" "$val"
 done
 
-# ── 更新 APKBUILD checksum（配置文件已修改，必须更新否则构建失败） ──────
-echo "=== 更新 APKBUILD checksum ==="
-if command -v pmbootstrap >/dev/null 2>&1; then
-    # pmbootstrap 3.9.0 不允许以 root 运行，需以 pmbuild 用户执行
-    if id pmbuild >/dev/null 2>&1; then
-        su -s /bin/sh pmbuild -c \
-            "export HOME=/work/pmbootstrap; pmbootstrap checksum linux-postmarketos-mediatek-mt81" \
-            && echo "✓ checksum 已更新" \
-            || echo "⚠ checksum 更新失败，请手动运行: su -s /bin/sh pmbuild -c 'export HOME=/work/pmbootstrap; pmbootstrap checksum linux-postmarketos-mediatek-mt81'"
-    else
-        echo "⚠ pmbuild 用户不存在，跳过 checksum 更新"
-        echo "  请先运行 init-pmbootstrap.sh，再手动更新 checksum"
-    fi
-else
-    echo "⚠ pmbootstrap 未在 PATH 中，跳过 checksum 更新"
-    echo "  请手动运行: pmbootstrap checksum linux-postmarketos-mediatek-mt81"
-fi
-
-# ── 安装 tar wrapper（Docker overlay2 解压修复） ────────────────────────
-echo "=== 安装 tar wrapper（overlay2 修复） ==="
-CHROOT_TAR="/work/pmbootstrap/chroot_native/usr/bin/tar"
-if [ -f "$CHROOT_TAR" ] && [ ! -f "${CHROOT_TAR}.real" ]; then
-    cp "$CHROOT_TAR" "${CHROOT_TAR}.real"
-    cp /scripts/tar-wrapper.sh "$CHROOT_TAR"
-    chmod +x "$CHROOT_TAR"
-    echo "✓ tar wrapper 已安装"
-elif [ ! -f "$CHROOT_TAR" ]; then
-    echo "  native chroot 尚未创建，构建完成第一阶段后会自动需要安装"
-    echo "  若构建中途因 'Directory renamed' 报错，请运行:"
-    echo "  bash /scripts/patch-kernel-otbr.sh  （会重新安装 wrapper）"
-fi
-
 echo ""
-echo "下一步："
-echo "  # 以 pmbuild 用户运行构建："
+echo "补丁完成。后续步骤（CI 自动执行，手动构建时请手动运行）："
+echo "  pmbootstrap checksum linux-postmarketos-mediatek-mt81"
+echo "  pmbootstrap kconfig check linux-postmarketos-mediatek-mt81"
 echo "  su -s /bin/sh pmbuild -c 'export HOME=/work/pmbootstrap; pmbootstrap build linux-postmarketos-mediatek-mt81'"
-echo "  su -s /bin/sh pmbuild -c 'export HOME=/work/pmbootstrap; pmbootstrap flasher flash_kernel --device google-kukui'"
 echo ""
 echo "刷入后验证："
 echo "  cat /proc/net/ip6_mr_vif      # IPv6 多播路由接口（OTBR）"

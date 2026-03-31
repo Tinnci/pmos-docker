@@ -17,6 +17,16 @@ on:
         description: '强制重新构建（忽略缓存）'
         type: boolean
         default: false
+  # 允许 release.yml 通过 workflow_call 复用本工作流
+  workflow_call:
+    inputs:
+      force_rebuild:
+        type: boolean
+        default: false
+    outputs:
+      artifact-name:
+        description: '上传的 kernel APK artifact 名称'
+        value: ${{ jobs.build.outputs.artifact-name }}
 
 env:
   KERNEL_PKG: linux-postmarketos-mediatek-mt81
@@ -27,6 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     # aarch64 交叉编译约 40-60 分钟
     timeout-minutes: 360
+    outputs:
+      artifact-name: ${{ steps.artifact-meta.outputs.name }}
 
     steps:
       - name: Checkout
@@ -206,10 +218,14 @@ jobs:
             -exec cp {} artifacts/ \; 2>/dev/null || true
           ls -lh artifacts/ || echo "未找到 APK 文件"
 
+      - name: Set artifact metadata
+        id: artifact-meta
+        run: echo "name=kernel-${{ env.KERNEL_PKG }}-${{ github.sha }}" >> $GITHUB_OUTPUT
+
       - name: Upload kernel APK
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-${{ env.KERNEL_PKG }}-${{ github.sha }}
+          name: ${{ steps.artifact-meta.outputs.name }}
           path: artifacts/*.apk
           if-no-files-found: warn
           retention-days: 30
