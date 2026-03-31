@@ -174,20 +174,29 @@ jobs:
           mkdir -p cache/apk
           docker compose up -d
           echo "等待 bootstrap-pmbootstrap.sh 完成..."
-          # 检测 /tmp/bootstrap-done 标记（bootstrap 完成时写入），轮询间隔 2s
-          # 最多等 180s（90 次 × 2s）；超时后打印日志便于排查
-          for i in $(seq 1 90); do
-            if docker compose exec -T pmos-builder sh -c 'test -f /tmp/bootstrap-done' >/dev/null 2>&1; then
+          # 检测 /tmp/bootstrap-done 标记；回退条件：pmbootstrap 命令可用
+          # 轮询间隔 2s，最多 420s（210 次）；
+          # 历史稳定样本约 303s，180s 会导致假失败。
+          READY=0
+          for i in $(seq 1 210); do
+            if docker compose exec -T pmos-builder sh -c \
+              'test -f /tmp/bootstrap-done || command -v pmbootstrap >/dev/null 2>&1'; then
               echo "✓ bootstrap 完成（迭代 ${i}，约 $((i * 2))s）"
+              READY=1
               break
             fi
-            if [ "$i" -eq 90 ]; then
-              echo "⚠ bootstrap 超时（180s），打印容器日志："
-              docker compose logs --tail=30 pmos-builder
+            if [ "$i" -eq 210 ]; then
+              echo "⚠ bootstrap 超时（420s），打印容器日志："
+              docker compose logs --tail=80 pmos-builder
               exit 1
             fi
             sleep 2
           done
+          if [ "$READY" -ne 1 ]; then
+            echo "⚠ 未检测到 bootstrap 就绪信号"
+            docker compose logs --tail=80 pmos-builder
+            exit 1
+          fi
 
       # ── 初始化 pmbootstrap（若未初始化或 cfg 格式过旧） ──────
       - name: Init pmbootstrap
