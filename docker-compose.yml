@@ -20,5 +20,5 @@ services:
       - ./cache/apk:/cache/apk
       - ./ccache:/ccache
       - ./scripts:/scripts
-    command: ["sh", "-lc", "mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true; sh /scripts/bootstrap-pmbootstrap.sh; sleep infinity"]
+    command: ["sh", "-lc", "mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true; sleep infinity"]
     restart: unless-stopped
