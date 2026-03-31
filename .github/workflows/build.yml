@@ -48,11 +48,13 @@ jobs:
       - name: Set monthly cache key
         run: echo "YM=$(date +%Y%m)" >> $GITHUB_ENV
 
-      # ── 缓存 1: ccache（key 用 run_id 滚动，始终保留最新一次）
-      # restore-keys 兜底：同分支最近一次 → 同包名任意分支
-      # ★ 不再绑定 patch-kernel 脚本 hash，patch 变动不会丢弃已编译对象
+      # ── 缓存 1: ccache
+      # 策略：restore-only key 用分支名匹配最近一次构建结果；
+      # save 时用 run_id 写入新 entry（防止并发覆盖），旧 entry 由 GitHub 自动 LRU 淘汰。
+      # primary key 故意用 run_id 使其「只写不读」，真正恢复由 restore-keys 完成。
       - name: Restore ccache
-        uses: actions/cache@v4
+        id: ccache-restore
+        uses: actions/cache/restore@v4
         with:
           path: ccache/
           key: ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -229,3 +231,11 @@ jobs:
           path: artifacts/*.apk
           if-no-files-found: warn
           retention-days: 30
+
+      # ── 保存 ccache（即使构建失败也保存，保留增量编译对象）──
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ccache/
+          key: ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-${{ github.run_id }}
