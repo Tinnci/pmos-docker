@@ -200,6 +200,8 @@ echo "[8/8] pmaports kconfig check 要求的缺失项..."
 kset_y CONFIG_BPF_LSM                  # BPF 安全模块
 kset_y CONFIG_KPROBES                  # Kernel probes（eBPF/perf 依赖）
 kset_y CONFIG_KPROBE_EVENTS            # Kprobe trace events
+# category:hardening
+kset_y CONFIG_SECURITY_YAMA            # ptrace_scope hardening
 # category:filesystems - EROFS 压缩支持
 kset_y CONFIG_EROFS_FS_ZIP_LZMA
 kset_y CONFIG_EROFS_FS_ZIP_DEFLATE
