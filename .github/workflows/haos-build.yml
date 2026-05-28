@@ -1,0 +1,50 @@
+name: Build HAOS image (OTBR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "home-assistant/operating-system branch or tag"
+        required: true
+        default: "dev"
+      target:
+        description: "HAOS build target"
+        required: true
+        default: "generic_aarch64"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/local/lib/android/sdk/ndk /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Clone HAOS upstream and apply OTBR fragment
+        run: |
+          mkdir -p work
+          HAOS_REPO=https://github.com/home-assistant/operating-system.git \
+          HAOS_REF="${{ inputs.upstream_ref }}" \
+          HAOS_DIR="$PWD/work/haos" \
+          HAOS_TARGET="${{ inputs.target }}" \
+          sh scripts/bootstrap-haos-upstream.sh
+
+      - name: Build HAOS image
+        working-directory: work/haos
+        run: |
+          ./scripts/enter.sh make "${{ inputs.target }}"
+
+      - name: Upload HAOS images
+        uses: actions/upload-artifact@v4
+        with:
+          name: haos-${{ inputs.target }}-${{ github.sha }}
+          path: work/haos/output/images/haos_*
+          if-no-files-found: error
+          retention-days: 14

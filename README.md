@@ -3,6 +3,32 @@
 基于官方 `docker-postmarketos:edge` 镜像，为 google-kukui (Chromebook Crane, MT8183, aarch64)
 构建支持 OTBR / OpenThread 多播路由的 postmarketOS 内核。
 
+## HAOS 迁移通道
+
+HAOS 不是 pmbootstrap/pmaports 发行版，不能直接复用本仓库的 APK 构建产物。HAOS
+上游是 `home-assistant/operating-system`，构建体系是 Buildroot/br2-external，
+内核配置应以 `BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES` 片段注入。
+
+本仓库新增了保守迁移入口：
+
+- `scripts/bootstrap-haos-upstream.sh`：拉取 HAOS 上游源码并初始化 submodule。
+- `scripts/patch-haos-otbr-fragment.sh`：把当前 OTBR/Matter/Docker 需要的内核选项写入
+  `buildroot-external/kernel/zm1-otbr.config`，并注入指定 HAOS target 的 defconfig。
+- `.github/workflows/haos-build.yml`：手动触发 HAOS 镜像构建，默认使用
+  `upstream_ref=dev`、`target=generic_aarch64`。
+
+本地 Linux 环境可按下面方式试跑：
+
+```sh
+HAOS_DIR="$PWD/work/haos" HAOS_TARGET=generic_aarch64 sh scripts/bootstrap-haos-upstream.sh
+cd work/haos
+./scripts/enter.sh make generic_aarch64
+```
+
+google-kukui 若要成为真正的一等 HAOS target，还需要在 HAOS 上游补齐 board 定义、
+启动链、设备树/固件和 RAUC 分区元数据；当前迁移通道先把已验证的 OTBR 内核需求落到
+HAOS 的正确构建入口上，避免继续维护两套互相不兼容的内核补丁方式。
+
 ## 快速启动
 
 ```bash

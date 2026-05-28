@@ -4,13 +4,19 @@ on:
   push:
     branches: [master]
     paths:
-      - 'scripts/**'
+      - 'scripts/bootstrap-pmbootstrap.sh'
+      - 'scripts/init-pmbootstrap.sh'
+      - 'scripts/patch-kernel-otbr.sh'
+      - 'scripts/tar-wrapper.sh'
       - 'docker-compose.yml'
       - '.github/workflows/build.yml'
   pull_request:
     branches: [master]
     paths:
-      - 'scripts/**'
+      - 'scripts/bootstrap-pmbootstrap.sh'
+      - 'scripts/init-pmbootstrap.sh'
+      - 'scripts/patch-kernel-otbr.sh'
+      - 'scripts/tar-wrapper.sh'
   workflow_dispatch:
     inputs:
       force_rebuild:

@@ -1,0 +1,93 @@
+#!/bin/sh
+# Add zM1/OTBR kernel requirements to a HAOS Buildroot target.
+set -eu
+
+HAOS_DIR="${HAOS_DIR:-/work/haos}"
+HAOS_TARGET="${HAOS_TARGET:-generic_aarch64}"
+
+DEFCONFIG="$HAOS_DIR/buildroot-external/configs/${HAOS_TARGET}_defconfig"
+FRAGMENT_DIR="$HAOS_DIR/buildroot-external/kernel"
+FRAGMENT_FILE="$FRAGMENT_DIR/zm1-otbr.config"
+FRAGMENT_REF='$(BR2_EXTERNAL_HASSOS_PATH)/kernel/zm1-otbr.config'
+
+if [ ! -f "$DEFCONFIG" ]; then
+    echo "ERROR: HAOS defconfig not found: $DEFCONFIG"
+    echo "Set HAOS_DIR and HAOS_TARGET to an existing Home Assistant OS checkout/target."
+    exit 1
+fi
+
+mkdir -p "$FRAGMENT_DIR"
+cat > "$FRAGMENT_FILE" <<'KCONFIG'
+# zM1 / OTBR / Matter kernel options carried over from the pmOS kukui build.
+CONFIG_IPV6=y
+CONFIG_IPV6_MULTIPLE_TABLES=y
+CONFIG_IPV6_SUBTREES=y
+CONFIG_IPV6_ROUTER_PREF=y
+CONFIG_IPV6_ROUTE_INFO=y
+CONFIG_IPV6_MROUTE=y
+CONFIG_IPV6_MROUTE_MULTIPLE_TABLES=y
+CONFIG_IPV6_PIMSM_V2=y
+CONFIG_IP_MROUTE=y
+CONFIG_IP_MROUTE_MULTIPLE_TABLES=y
+CONFIG_IP_PIMSM_V1=y
+CONFIG_IP_PIMSM_V2=y
+CONFIG_TUN=y
+CONFIG_NETFILTER=y
+CONFIG_NF_CONNTRACK=y
+CONFIG_NF_NAT=y
+CONFIG_NF_NAT_IPV4=y
+CONFIG_NF_NAT_IPV6=y
+CONFIG_IP_NF_IPTABLES=m
+CONFIG_IP_NF_FILTER=m
+CONFIG_IP_NF_TARGET_MASQUERADE=y
+CONFIG_IP_NF_RAW=m
+CONFIG_IP6_NF_IPTABLES=m
+CONFIG_IP6_NF_FILTER=m
+CONFIG_IP6_NF_MANGLE=y
+CONFIG_IP6_NF_RAW=m
+CONFIG_NF_TABLES=m
+CONFIG_NF_TABLES_IPV4=m
+CONFIG_NF_TABLES_IPV6=m
+CONFIG_NFT_NAT=m
+CONFIG_NFT_MASQ=m
+CONFIG_IP_SET=m
+CONFIG_IP_SET_HASH_IP=m
+CONFIG_IP_SET_HASH_NET=m
+CONFIG_IP_SET_HASH_NETPORT=m
+CONFIG_IP_SET_LIST_SET=m
+CONFIG_NETFILTER_XT_SET=m
+CONFIG_NETFILTER_XT_MATCH_PKTTYPE=m
+CONFIG_IKCONFIG=y
+CONFIG_IKCONFIG_PROC=y
+CONFIG_VETH=m
+CONFIG_BRIDGE=m
+CONFIG_BRIDGE_NETFILTER=m
+CONFIG_NET_NS=y
+CONFIG_BT_LE=y
+CONFIG_BT_BNEP=y
+CONFIG_NET_SCH_FQ=y
+CONFIG_NET_SCH_FQ_CODEL=y
+CONFIG_NET_SCH_CAKE=y
+CONFIG_ENCRYPTED_KEYS=y
+KCONFIG
+
+if grep -q "kernel/zm1-otbr.config" "$DEFCONFIG"; then
+    echo "HAOS defconfig already references zm1-otbr.config"
+else
+    tmp="$(mktemp)"
+    if grep -q '^BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=' "$DEFCONFIG"; then
+        awk -v fragment=" $FRAGMENT_REF" '
+            /^BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="/ {
+                sub(/"$/, fragment "\"")
+            }
+            { print }
+        ' "$DEFCONFIG" > "$tmp"
+    else
+        cp "$DEFCONFIG" "$tmp"
+        printf '\nBR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="%s"\n' "$FRAGMENT_REF" >> "$tmp"
+    fi
+    mv "$tmp" "$DEFCONFIG"
+fi
+
+echo "Wrote HAOS kernel fragment: $FRAGMENT_FILE"
+echo "Updated HAOS target defconfig: $DEFCONFIG"
