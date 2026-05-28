@@ -10,7 +10,7 @@ on:
       target:
         description: "HAOS build target"
         required: true
-        default: "generic_aarch64"
+        default: "google_kukui"
 
 jobs:
   build:

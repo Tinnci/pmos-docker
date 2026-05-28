@@ -7,6 +7,7 @@ HAOS_REF="${HAOS_REF:-dev}"
 HAOS_DIR="${HAOS_DIR:-/work/haos}"
 HAOS_TARGET="${HAOS_TARGET:-generic_aarch64}"
 APPLY_OTBR="${APPLY_OTBR:-1}"
+APPLY_KUKUI="${APPLY_KUKUI:-auto}"
 SCRIPT_DIR="$(CDPATH= cd "$(dirname "$0")" && pwd)"
 
 if ! command -v git >/dev/null 2>&1; then
@@ -23,6 +24,10 @@ else
     git -C "$HAOS_DIR" fetch --depth 1 origin "$HAOS_REF"
     git -C "$HAOS_DIR" checkout FETCH_HEAD
     git -C "$HAOS_DIR" submodule update --init --depth 1
+fi
+
+if [ "$APPLY_KUKUI" = "1" ] || { [ "$APPLY_KUKUI" = "auto" ] && [ "$HAOS_TARGET" = "google_kukui" ]; }; then
+    HAOS_DIR="$HAOS_DIR" sh "$SCRIPT_DIR/patch-haos-kukui-board.sh"
 fi
 
 if [ "$APPLY_OTBR" = "1" ]; then
