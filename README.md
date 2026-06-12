@@ -1,36 +1,35 @@
-# pmos-docker — google-kukui OTBR 内核构建环境
+# pmos-docker
 
-基于官方 `docker-postmarketos:edge` 镜像，为 google-kukui (Chromebook Crane, MT8183, aarch64)
-构建支持 OTBR / OpenThread 多播路由的 postmarketOS 内核。
+Google Kukui (MT8183) build tooling for HAOS and the older postmarketOS OTBR
+kernel experiment.
 
-## HAOS 迁移通道
+The current primary path is HAOS. The postmarketOS workflow remains available as
+a legacy kernel build path.
 
-HAOS 不是 pmbootstrap/pmaports 发行版，不能直接复用本仓库的 APK 构建产物。HAOS
-上游是 `home-assistant/operating-system`，构建体系是 Buildroot/br2-external，
-内核配置应以 `BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES` 片段注入。
+## HAOS Kukui
 
-本仓库新增了保守迁移入口：
+This repository patches `home-assistant/operating-system` with a `google_kukui`
+target using:
 
-- `scripts/bootstrap-haos-upstream.sh`：拉取 HAOS 上游源码并初始化 submodule。
-- `scripts/patch-haos-kukui-board.sh`：补齐 `google_kukui` HAOS target，包括
-  board meta、Depthcharge 启动镜像生成、ChromeOS GPT kernel 分区、RAUC custom
-  boot backend、MT8183/Kukui DTB 列表和 Wi-Fi/BT 固件配置。
-- `scripts/patch-haos-otbr-fragment.sh`：把当前 OTBR/Matter/Docker 需要的内核选项写入
-  `buildroot-external/kernel/zm1-otbr.config`，并注入指定 HAOS target 的 defconfig。
-- `scripts/haos-buildctl.sh`：统一的阶段化构建入口，分发 preflight、bootstrap、
-  patch、config、cache-warm、build、resume-build、export-artifacts、verify-artifacts
-  和 diagnostics。
-- `scripts/build-haos-local.sh`：本地非交互构建入口；macOS 下默认用 Docker volume
-  挂载 `/build/output`，避免 APFS 大小写不敏感导致 Linux kernel headers 解包冲突。
-- `.github/workflows/haos-build.yml`：手动触发 HAOS 镜像构建，拆分为脚本验证、
-  Kukui config、完整 build 和 artifacts verify。
-- `.github/workflows/haos-builder-image.yml`：构建并推送预构建 builder image：
-  `ghcr.io/Tinnci/haos-builder:kukui-17.3`。
+- Buildroot/br2-external integration
+- ChromeOS Depthcharge boot images
+- ChromeOS kernel partition GUIDs
+- RAUC custom A/B slot backend
+- MT8183/Kukui in-tree DTBs
+- OTBR/Matter kernel config deltas
 
-本地 macOS/Linux 环境可按下面方式试跑：
+Default baseline:
+
+- HAOS upstream ref: `17.3`
+- Target: `google_kukui`
+- Builder image: `ghcr.io/tinnci/haos-builder:kukui-17.3`
+
+Local build:
 
 ```sh
 export HAOS_DIR="$PWD/work/haos"
+export HAOS_BUILDER_IMAGE=ghcr.io/tinnci/haos-builder:kukui-17.3
+
 scripts/haos-buildctl.sh bootstrap
 scripts/haos-buildctl.sh patch
 scripts/haos-buildctl.sh config
@@ -40,79 +39,52 @@ scripts/haos-buildctl.sh export-artifacts
 scripts/haos-buildctl.sh verify-artifacts
 ```
 
-本地构建产物默认保存在 Docker volume `haos-google_kukui-17-3-output` 的
-`/build/output` 里。下载缓存固定为 `$HOME/hassos-cache/dl`；ccache 默认保存在
-Docker volume `haos-google_kukui-17-3-ccache`，CI 可通过 `HAOS_CCACHE_DIR` 映射到
-可缓存的宿主路径。
-
-构建失败后可以直接收集环境和最后状态：
+Useful recovery commands:
 
 ```sh
 scripts/haos-buildctl.sh diagnostics
-```
-
-如果失败发生在 Buildroot 内部并且 defconfig 已经生成，可跳过 top-level defconfig
-继续：
-
-```sh
 scripts/haos-buildctl.sh resume-build
 ```
 
-构建操作界面、可添加组件、GitHub Actions 全量构建和缓存/复用策略见
-[`docs/haos-build-ux.md`](docs/haos-build-ux.md)。
+Local cache/volume defaults:
 
-`google_kukui` 目标使用 ChromeOS Depthcharge 方式启动。kernel 分区使用 ChromeOS
-kernel GUID，kernel cmdline 使用 `root=PARTUUID=%U/PARTNROFF=1`，RAUC 通过
-`/usr/lib/rauc/depthcharge-backend` 操作 GPT attribute 来完成 A/B slot 选择。
+- Output: `haos-google_kukui-17-3-output`
+- ccache: `haos-google_kukui-17-3-ccache`
+- Downloads: `$HOME/hassos-cache/dl`
 
-## 快速启动
+GitHub Actions:
 
-```bash
-cd ~/pmos-docker
-/usr/local/bin/docker compose up -d
-/usr/local/bin/docker exec -it pmos-builder sh
-```
+- `Build HAOS builder image`: builds/pushes the GHCR builder image on relevant
+  Dockerfile/workflow changes.
+- `Build HAOS image (OTBR)`: manual full HAOS image build with validation,
+  config, build, export, and artifact verification jobs.
 
-## 完整构建流程（容器内逐步执行，不要粘贴为一个代码块）
+More detail: [`docs/haos-build-ux.md`](docs/haos-build-ux.md).
+
+## Legacy postmarketOS Kernel
+
+The original workflow builds a postmarketOS kernel package for google-kukui with
+OTBR/OpenThread multicast routing options.
+
+Start the container:
 
 ```sh
-# 1. 安装 pmbootstrap（容器重启后需重新运行，因为容器不持久化 apk 包）
-sh /scripts/bootstrap-pmbootstrap.sh
-
-# 2. 初始化（首次运行，或 work 目录被清空后）
-sh /scripts/init-pmbootstrap.sh
-# 设置 UI（plasma-mobile）
-su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap config ui plasma-mobile"
-
-# 3. 添加 OTBR 内核配置（多播路由 + TUN + iptables + 容器网络）
-sh /scripts/patch-kernel-otbr.sh
-
-# 4. 构建内核（kukui 使用共享内核 linux-postmarketos-mediatek-mt81）
-su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap build linux-postmarketos-mediatek-mt81"
-
-# 5. 刷入内核
-su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap flasher flash_kernel --device google-kukui"
+docker compose up -d
+docker exec -it pmos-builder sh
 ```
 
-> **注意**：容器重启后需要重新执行步骤 1（安装 pmbootstrap），
-> `work/` 目录已挂载到宿主机，pmaports 和构建缓存不会丢失。
+Inside the container:
 
-## OTBR 内核配置说明
+```sh
+sh /scripts/bootstrap-pmbootstrap.sh
+sh /scripts/init-pmbootstrap.sh
+sh /scripts/patch-kernel-otbr.sh
+su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap build linux-postmarketos-mediatek-mt81"
+```
 
-`patch-kernel-otbr.sh` 会自动在 kukui 内核配置中启用：
+Flash through pmbootstrap:
 
-| 类别 | 配置项 | 用途 |
-|---|---|---|
-| IPv6 多播路由 | `IPV6_MROUTE`, `IPV6_PIMSM_V2` | backbone multicast routing |
-| IPv4 多播路由 | `IP_MROUTE`, `IP_PIMSM_V1/V2` | MLD proxy 回退路径 |
-| TUN 设备 | `TUN` | wpan0/tun0 Thread 接口 |
-| Netfilter | `NF_NAT`, `NFT_MASQ` 等 | NAT64 / iptables 防火墙 |
-| USB Serial | `USB_SERIAL_CP210X`, `USB_ACM` | Thread NCP/RCP 串口通信 |
-
-# 方案A：设备已运行pmOS（USB连接，172.16.42.1）
-scp artifacts/linux-postmarketos-mediatek-mt81-6.18.13-r0.apk user@172.16.42.1:
-ssh user@172.16.42.1 "sudo apk add --allow-untrusted ~/linux-postmarketos-mediatek-mt81-6.18.13-r0.apk && sudo reboot"
-
-# 方案B：通过pmbootstrap flasher（Fastboot模式）
+```sh
 docker exec pmos-builder sh -c \
-  'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap flasher flash_kernel"'
+  'su -s /bin/sh pmbuild -c "export HOME=/work/pmbootstrap; pmbootstrap flasher flash_kernel --device google-kukui"'
+```
