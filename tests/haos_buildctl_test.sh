@@ -1,0 +1,95 @@
+#!/bin/sh
+set -eu
+
+REPO_ROOT="$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
+BUILDCTL="$REPO_ROOT/scripts/haos-buildctl.sh"
+TMPDIR="${TMPDIR:-/tmp}"
+WORKDIR="$(mktemp -d "$TMPDIR/haos-buildctl-test.XXXXXX")"
+
+cleanup() {
+    rm -rf "$WORKDIR"
+}
+trap cleanup EXIT
+
+assert_contains() {
+    file="$1"
+    text="$2"
+    if ! grep -F "$text" "$file" >/dev/null; then
+        echo "expected '$text' in $file" >&2
+        echo "--- $file ---" >&2
+        cat "$file" >&2
+        exit 1
+    fi
+}
+
+if sh "$BUILDCTL" help >"$WORKDIR/help.out" 2>"$WORKDIR/help.err"; then
+    :
+else
+    echo "help command failed" >&2
+    cat "$WORKDIR/help.err" >&2
+    exit 1
+fi
+assert_contains "$WORKDIR/help.out" "preflight"
+assert_contains "$WORKDIR/help.out" "bootstrap"
+assert_contains "$WORKDIR/help.out" "verify-artifacts"
+assert_contains "$WORKDIR/help.out" "resume-build"
+assert_contains "$WORKDIR/help.out" "HAOS_CCACHE_VOLUME"
+
+if HAOS_DIR="$WORKDIR/missing" sh "$BUILDCTL" preflight >"$WORKDIR/preflight.out" 2>"$WORKDIR/preflight.err"; then
+    echo "preflight unexpectedly succeeded for missing HAOS_DIR" >&2
+    exit 1
+fi
+assert_contains "$WORKDIR/preflight.err" "HAOS_DIR does not exist"
+
+mkdir -p "$WORKDIR/haos" "$WORKDIR/cache" "$WORKDIR/export"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" config >"$WORKDIR/config.out"
+assert_contains "$WORKDIR/config.out" "make google_kukui-config"
+assert_contains "$WORKDIR/config.out" "haos-google_kukui-17-3-output:/build/output"
+assert_contains "$WORKDIR/config.out" "haos-google_kukui-17-3-ccache:/ccache"
+assert_contains "$WORKDIR/config.out" "BR2_DL_DIR=/cache/dl"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" build >"$WORKDIR/build.out"
+assert_contains "$WORKDIR/build.out" "make google_kukui"
+assert_contains "$WORKDIR/build.out" "CCACHE_DIR=/ccache"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" cache-warm >"$WORKDIR/cache-warm.out"
+assert_contains "$WORKDIR/cache-warm.out" "dbus-glib-source os-agent-source tempio-source"
+assert_contains "$WORKDIR/cache-warm.out" "BR2_DL_DIR=/cache/dl"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" export-artifacts >"$WORKDIR/export.out"
+assert_contains "$WORKDIR/export.out" "cp -av /out/images/. /export/"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" verify-artifacts >"$WORKDIR/verify.out"
+assert_contains "$WORKDIR/verify.out" "kernel.img"
+assert_contains "$WORKDIR/verify.out" "haos_google-kukui-*.img.xz"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" diagnostics >"$WORKDIR/diagnostics.out"
+assert_contains "$WORKDIR/diagnostics.out" "== failed Buildroot stamps =="
+assert_contains "$WORKDIR/diagnostics.out" "== HAOS checkout diff =="
+
+echo "haos buildctl tests passed"
