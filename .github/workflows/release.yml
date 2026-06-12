@@ -18,6 +18,7 @@ on:
         required: false
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   KERNEL_PKG: linux-postmarketos-mediatek-mt81
   DEVICE: google-kukui
 
@@ -38,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0   # 获取完整历史用于 changelog
 
@@ -53,7 +54,7 @@ jobs:
 
       # ── 下载 build 阶段产出的 APK artifact ─────────────────
       - name: Download kernel APKs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: ${{ needs.build.outputs.artifact-name }}
           path: release-assets/

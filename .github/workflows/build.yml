@@ -35,6 +35,7 @@ on:
         value: ${{ jobs.build.outputs.artifact-name }}
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   KERNEL_PKG: linux-postmarketos-mediatek-mt81
   DEVICE: google-kukui
 
@@ -45,7 +46,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Validate shell scripts syntax
         run: |
@@ -90,7 +91,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # 月份标识用于缓存 key 自动轮转（Docker 镜像 / pmaports）
       - name: Set monthly cache key
@@ -102,7 +103,7 @@ jobs:
       # primary key 故意用 run_id 使其「只写不读」，真正恢复由 restore-keys 完成。
       - name: Restore ccache
         id: ccache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ccache/
           key: ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -112,14 +113,14 @@ jobs:
 
       # ── 缓存 2: pip（pmbootstrap Python 依赖，极少变化）─────
       - name: Restore pip cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: cache/
           key: pip-pmos-${{ env.KERNEL_PKG }}
 
       # ── 缓存 3: apk 包缓存（避免每次重新下载 pmbootstrap+工具链，节省约 5 分钟）
       - name: Restore apk cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: cache/apk/
           key: apk-pmos-${{ env.YM }}
@@ -127,7 +128,7 @@ jobs:
 
       # ── 缓存 4: 内核源码 tarball（~147MB，省去每次重新下载）
       - name: Restore distfiles cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: work/pmbootstrap/cache_distfiles/
           key: distfiles-${{ env.KERNEL_PKG }}
@@ -136,7 +137,7 @@ jobs:
       # ── 缓存 5: pmaports git 仓库（省去每次重新 clone ~3min）
       # 月度轮转 key 保证定期拉取最新；pmbootstrap pull 会增量更新
       - name: Restore pmaports cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: work/pmbootstrap/cache_git/
           key: pmaports-${{ env.KERNEL_PKG }}-${{ env.YM }}
@@ -147,7 +148,7 @@ jobs:
       # ── 缓存 6: Docker 镜像（172MB，省去每次重新拉取）────────
       # 月度轮转 key 保证定期拉取最新 edge 版本
       - name: Cache Docker image
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/pmos-image.tar.gz
           key: docker-pmos-${{ env.YM }}-${{ hashFiles('docker-compose.yml') }}
@@ -279,7 +280,7 @@ jobs:
         run: echo "name=kernel-${{ env.KERNEL_PKG }}-${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Upload kernel APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.artifact-meta.outputs.name }}
           path: artifacts/*.apk
@@ -289,7 +290,7 @@ jobs:
       # ── 保存 ccache（即使构建失败也保存，保留增量编译对象）──
       - name: Save ccache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ccache/
           key: ccache-${{ env.KERNEL_PKG }}-${{ github.ref_name }}-${{ github.run_id }}
