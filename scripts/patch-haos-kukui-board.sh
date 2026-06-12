@@ -8,11 +8,50 @@ DEFCONFIG="$HAOS_DIR/buildroot-external/configs/google_kukui_defconfig"
 GENERIC_DEFCONFIG="$HAOS_DIR/buildroot-external/configs/generic_aarch64_defconfig"
 DOCKERFILE="$HAOS_DIR/Dockerfile"
 SYSTEM_CONF="$HAOS_DIR/buildroot-external/ota/system.conf.gtpl"
+RAUC_SH="$HAOS_DIR/buildroot-external/scripts/rauc.sh"
+HDD_IMAGE_SH="$HAOS_DIR/buildroot-external/scripts/hdd-image.sh"
+TAR_MK="$HAOS_DIR/buildroot/package/tar/tar.mk"
+PKG_AUTOTOOLS_MK="$HAOS_DIR/buildroot/package/pkg-autotools.mk"
+BUILDROOT_MAKEFILE="$HAOS_DIR/buildroot/Makefile"
+PKG_GENERIC_MK="$HAOS_DIR/buildroot/package/pkg-generic.mk"
 
 if [ ! -f "$GENERIC_DEFCONFIG" ]; then
     echo "ERROR: HAOS generic_aarch64_defconfig not found under $HAOS_DIR"
     exit 1
 fi
+
+EXTERNAL_PATH_REF="$(
+    awk '
+        match($0, /\$\(BR2_EXTERNAL_[A-Z0-9_]*_PATH\)/) {
+            print substr($0, RSTART, RLENGTH)
+            exit
+        }
+    ' "$GENERIC_DEFCONFIG"
+)"
+if [ -z "$EXTERNAL_PATH_REF" ]; then
+    echo "ERROR: unable to detect BR2_EXTERNAL path variable from $GENERIC_DEFCONFIG"
+    exit 1
+fi
+
+KERNEL_FRAGMENT_FILES="$(
+    awk -F'"' '/^BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="/ { print $2; exit }' "$GENERIC_DEFCONFIG"
+)"
+if [ -z "$KERNEL_FRAGMENT_FILES" ]; then
+    echo "ERROR: unable to detect kernel config fragments from $GENERIC_DEFCONFIG"
+    exit 1
+fi
+KUKUI_KERNEL_FRAGMENT_FILES="$(
+    printf '%s\n' "$KERNEL_FRAGMENT_FILES" | awk -v board="${EXTERNAL_PATH_REF}/board/google/kukui/kernel.config" '
+        {
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /\/board\/[^[:space:]]+\/kernel\.config$/) {
+                    $i = board
+                }
+            }
+            print
+        }
+    '
+)"
 
 mkdir -p "$BOARD_DIR/rootfs-overlay/usr/lib/rauc"
 
@@ -196,7 +235,7 @@ function hassos_pre_image() {
 
     if ! command -v mkdepthcharge >/dev/null 2>&1; then
         echo "ERROR: mkdepthcharge is required for google-kukui HAOS images"
-        echo "       The patched HAOS Dockerfile installs depthcharge-tools."
+        echo "       The patched HAOS Dockerfile installs mkdepthcharge."
         exit 1
     fi
 
@@ -366,24 +405,39 @@ cp "$GENERIC_DEFCONFIG" "$DEFCONFIG"
 set_config() {
     key="$1"
     value="$2"
-    if grep -q "^${key}=" "$DEFCONFIG"; then
-        sed -i "s|^${key}=.*|${key}=${value}|" "$DEFCONFIG"
-    else
-        echo "${key}=${value}" >> "$DEFCONFIG"
-    fi
+    tmp="$(mktemp)"
+    awk -v key="$key" -v value="$value" '
+        BEGIN { done = 0 }
+        $0 ~ "^" key "=" {
+            if (!done) {
+                print key "=" value
+                done = 1
+            }
+            next
+        }
+        { print }
+        END {
+            if (!done) {
+                print key "=" value
+            }
+        }
+    ' "$DEFCONFIG" > "$tmp"
+    mv "$tmp" "$DEFCONFIG"
 }
 
 remove_config() {
     key="$1"
-    sed -i "/^${key}=/d" "$DEFCONFIG"
+    tmp="$(mktemp)"
+    awk -v key="$key" '$0 !~ "^" key "=" { print }' "$DEFCONFIG" > "$tmp"
+    mv "$tmp" "$DEFCONFIG"
 }
 
-set_config BR2_ROOTFS_POST_SCRIPT_ARGS '"$(BR2_EXTERNAL_HASSOS_PATH)/board/google/kukui $(BR2_EXTERNAL_HASSOS_PATH)/board/google/kukui/hassos-hook.sh"'
-set_config BR2_ROOTFS_OVERLAY '"$(BR2_EXTERNAL_HASSOS_PATH)/rootfs-overlay $(BR2_EXTERNAL_HASSOS_PATH)/board/google/kukui/rootfs-overlay"'
+set_config BR2_ROOTFS_POST_SCRIPT_ARGS "\"${EXTERNAL_PATH_REF}/board/google/kukui ${EXTERNAL_PATH_REF}/board/google/kukui/hassos-hook.sh\""
+set_config BR2_ROOTFS_OVERLAY "\"${EXTERNAL_PATH_REF}/rootfs-overlay ${EXTERNAL_PATH_REF}/board/google/kukui/rootfs-overlay\""
 set_config BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG y
 remove_config BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG
 remove_config BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE
-set_config BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES '"$(BR2_EXTERNAL_HASSOS_PATH)/kernel/v6.18.y/hassos.config $(BR2_EXTERNAL_HASSOS_PATH)/kernel/v6.18.y/docker.config $(BR2_EXTERNAL_HASSOS_PATH)/kernel/v6.18.y/device-support.config $(BR2_EXTERNAL_HASSOS_PATH)/kernel/v6.18.y/device-support-wireless.config $(BR2_EXTERNAL_HASSOS_PATH)/board/google/kukui/kernel.config"'
+set_config BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES "\"${KUKUI_KERNEL_FRAGMENT_FILES}\""
 set_config BR2_LINUX_KERNEL_DTS_SUPPORT y
 set_config BR2_LINUX_KERNEL_INTREE_DTS_NAME '"mediatek/mt8183-kukui-jacuzzi-burnet mediatek/mt8183-kukui-jacuzzi-cozmo mediatek/mt8183-kukui-jacuzzi-damu mediatek/mt8183-kukui-jacuzzi-fennel-sku1 mediatek/mt8183-kukui-jacuzzi-fennel-sku6 mediatek/mt8183-kukui-jacuzzi-fennel-sku7 mediatek/mt8183-kukui-jacuzzi-fennel14 mediatek/mt8183-kukui-jacuzzi-fennel14-sku2 mediatek/mt8183-kukui-jacuzzi-juniper-sku16 mediatek/mt8183-kukui-jacuzzi-kappa mediatek/mt8183-kukui-jacuzzi-kenzo mediatek/mt8183-kukui-jacuzzi-makomo-sku0 mediatek/mt8183-kukui-jacuzzi-makomo-sku1 mediatek/mt8183-kukui-jacuzzi-pico mediatek/mt8183-kukui-jacuzzi-pico6 mediatek/mt8183-kukui-jacuzzi-willow-sku0 mediatek/mt8183-kukui-jacuzzi-willow-sku1 mediatek/mt8183-kukui-kakadu mediatek/mt8183-kukui-kakadu-sku22 mediatek/mt8183-kukui-katsu-sku32 mediatek/mt8183-kukui-katsu-sku38 mediatek/mt8183-kukui-kodama-sku16 mediatek/mt8183-kukui-kodama-sku272 mediatek/mt8183-kukui-kodama-sku288 mediatek/mt8183-kukui-kodama-sku32 mediatek/mt8183-kukui-krane-sku0 mediatek/mt8183-kukui-krane-sku176"'
 set_config BR2_PACKAGE_LINUX_FIRMWARE_ATHEROS_10K_QCA9377 y
@@ -397,22 +451,120 @@ set_config BR2_PACKAGE_GPTFDISK_SGDISK y
 set_config BR2_PACKAGE_HASSIO_MACHINE '"qemuarm-64"'
 set_config BR2_PACKAGE_OS_AGENT_BOARD '"GoogleKukui"'
 
-if [ -f "$DOCKERFILE" ] && ! grep -q "depthcharge-tools" "$DOCKERFILE"; then
+if [ -f "$DOCKERFILE" ]; then
     tmp="$(mktemp)"
     awk '
+        BEGIN { in_build_tools = 0; done_depthcharge = 0; skip_depthcharge_deb = 0 }
+        skip_depthcharge_deb && /&& rm -f \/tmp\/depthcharge-tools\.deb \\/ {
+            skip_depthcharge_deb = 0
+            next
+        }
+        skip_depthcharge_deb {
+            next
+        }
+        /depthcharge-tools_0\.6\.2-2_all\.deb/ {
+            skip_depthcharge_deb = 1
+            next
+        }
+        /^[[:space:]]*(depthcharge-tools|device-tree-compiler|gdisk|linux-base|lz4|python3-pkg-resources|u-boot-tools|vboot-kernel-utils|vboot-utils|xz-utils|cgpt) \\/ {
+            next
+        }
         /python-is-python3 \\/ {
             print
-            print "        depthcharge-tools \\"
             print "        device-tree-compiler \\"
             print "        gdisk \\"
+            print "        linux-base \\"
             print "        lz4 \\"
+            print "        python3-pkg-resources \\"
             print "        u-boot-tools \\"
+            print "        vboot-kernel-utils \\"
             print "        vboot-utils \\"
+            print "        xz-utils \\"
+            print "        cgpt \\"
+            in_build_tools=1
             next
+        }
+        in_build_tools && /&& rm -rf \/var\/lib\/apt\/lists\/\*/ && !done_depthcharge {
+            print "    && wget -q -O /tmp/depthcharge-tools.deb http://deb.debian.org/debian/pool/main/d/depthcharge-tools/depthcharge-tools_0.6.2-2_all.deb \\"
+            print "    && apt-get install -y --no-install-recommends /tmp/depthcharge-tools.deb \\"
+            print "    && rm -f /tmp/depthcharge-tools.deb \\"
+            done_depthcharge=1
         }
         { print }
     ' "$DOCKERFILE" > "$tmp"
     mv "$tmp" "$DOCKERFILE"
+fi
+
+if [ -f "$TAR_MK" ]; then
+    tmp="$(mktemp)"
+    awk '
+        /gl_cv_func_getcwd_path_max=yes/ { next }
+        {
+            print
+            if ($0 == "HOST_TAR_CONF_ENV = \\") {
+                print "\tgl_cv_func_getcwd_path_max=yes \\"
+            }
+        }
+    ' "$TAR_MK" > "$tmp"
+    mv "$tmp" "$TAR_MK"
+fi
+
+if [ -f "$PKG_AUTOTOOLS_MK" ]; then
+    tmp="$(mktemp)"
+    awk '
+        /gl_cv_func_getcwd_path_max=yes/ { next }
+        {
+            print
+            if ($0 ~ /\$\$\(HOST_CONFIGURE_OPTS\)[[:space:]]*\\$/) {
+                print "\tgl_cv_func_getcwd_path_max=yes \\"
+            }
+        }
+    ' "$PKG_AUTOTOOLS_MK" > "$tmp"
+    mv "$tmp" "$PKG_AUTOTOOLS_MK"
+fi
+
+if [ -f "$BUILDROOT_MAKEFILE" ]; then
+    tmp="$(mktemp)"
+    awk '
+        /^TAR_OPTIONS[[:space:]]*=/ {
+            gsub(/[[:space:]]+--delay-directory-restore/, "")
+            gsub(/[[:space:]]+--warning=no-rename-directory/, "")
+            sub(/[[:space:]]+-xf[[:space:]]*$/, " --delay-directory-restore --warning=no-rename-directory -xf")
+        }
+        { print }
+    ' "$BUILDROOT_MAKEFILE" > "$tmp"
+    mv "$tmp" "$BUILDROOT_MAKEFILE"
+fi
+
+if [ -f "$PKG_GENERIC_MK" ]; then
+    tmp="$(mktemp)"
+    awk '
+        /^# default extract command$/ {
+            print
+            print "# Extract via container-local /tmp first to avoid GNU tar directory"
+            print "# status races on macOS Docker bind mounts."
+            print "$(2)_EXTRACT_CMDS ?= \\"
+            print "\t$$(if $$($(2)_SOURCE),tmpdir=$$$$(mktemp -d /tmp/buildroot-extract.XXXXXX) && \\"
+            print "\t$$(INFLATE$$(suffix $$($(2)_SOURCE))) $$($(2)_DL_DIR)/$$($(2)_SOURCE) | \\"
+            print "\t$$(TAR) --strip-components=$$($(2)_STRIP_COMPONENTS) \\"
+            print "\t\t-C \"$$$$tmpdir\" \\"
+            print "\t\t$$(foreach x,$$($(2)_EXCLUDES),--exclude='\''$$(x)'\'' ) \\"
+            print "\t\t$$(TAR_OPTIONS) -; \\"
+            print "\tstatus=$$$$?; \\"
+            print "\tif [ $$$$status -eq 0 ]; then cp -a \"$$$$tmpdir\"/. $$($(2)_DIR)/; status=$$$$?; fi; \\"
+            print "\trm -rf \"$$$$tmpdir\"; \\"
+            print "\texit $$$$status)"
+            skip=1
+            next
+        }
+        skip && /^# pre\/post-steps hooks$/ {
+            skip=0
+            print
+            next
+        }
+        !skip { print }
+    ' "$PKG_GENERIC_MK" > "$tmp"
+    mv "$tmp" "$PKG_GENERIC_MK"
 fi
 
 if ! grep -q 'BOOTLOADER") "depthcharge"' "$SYSTEM_CONF"; then
@@ -437,6 +589,29 @@ if ! grep -q 'BOOTLOADER") "depthcharge"' "$SYSTEM_CONF"; then
         { print }
     ' "$SYSTEM_CONF" > "$tmp"
     mv "$tmp" "$SYSTEM_CONF"
+fi
+
+if [ -f "$RAUC_SH" ] && ! grep -q 'system.conf.gtpl" </dev/null' "$RAUC_SH"; then
+    tmp="$(mktemp)"
+    awk '
+        /-template "\$\{BR2_EXTERNAL_[A-Z0-9_]+_PATH\}\/ota\/system\.conf\.gtpl"/ {
+            print $0 " </dev/null"
+            next
+        }
+        { print }
+    ' "$RAUC_SH" > "$tmp"
+    mv "$tmp" "$RAUC_SH"
+fi
+
+if [ -f "$HDD_IMAGE_SH" ] && ! grep -q 'manifest.raucm.gtpl" </dev/null' "$HDD_IMAGE_SH"; then
+    tmp="$(mktemp)"
+    awk '
+        /tempio -template "\$\{BR2_EXTERNAL_[A-Z0-9_]+_PATH\}\/ota\/manifest\.raucm\.gtpl"/ {
+            sub(/\)$/, " </dev/null)")
+        }
+        { print }
+    ' "$HDD_IMAGE_SH" > "$tmp"
+    mv "$tmp" "$HDD_IMAGE_SH"
 fi
 
 echo "Wrote HAOS google-kukui board support into $HAOS_DIR"

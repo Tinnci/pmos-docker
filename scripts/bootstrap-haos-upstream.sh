@@ -3,7 +3,7 @@
 set -eu
 
 HAOS_REPO="${HAOS_REPO:-https://github.com/home-assistant/operating-system.git}"
-HAOS_REF="${HAOS_REF:-dev}"
+HAOS_REF="${HAOS_REF:-17.3}"
 HAOS_DIR="${HAOS_DIR:-/work/haos}"
 HAOS_TARGET="${HAOS_TARGET:-generic_aarch64}"
 APPLY_OTBR="${APPLY_OTBR:-1}"

@@ -6,7 +6,7 @@ on:
       upstream_ref:
         description: "home-assistant/operating-system branch or tag"
         required: true
-        default: "dev"
+        default: "17.3"
       target:
         description: "HAOS build target"
         required: true

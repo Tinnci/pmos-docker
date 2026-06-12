@@ -17,16 +17,24 @@ HAOS 不是 pmbootstrap/pmaports 发行版，不能直接复用本仓库的 APK 
   boot backend、MT8183/Kukui DTB 列表和 Wi-Fi/BT 固件配置。
 - `scripts/patch-haos-otbr-fragment.sh`：把当前 OTBR/Matter/Docker 需要的内核选项写入
   `buildroot-external/kernel/zm1-otbr.config`，并注入指定 HAOS target 的 defconfig。
+- `scripts/build-haos-local.sh`：本地非交互构建入口；macOS 下默认用 Docker volume
+  挂载 `/build/output`，避免 APFS 大小写不敏感导致 Linux kernel headers 解包冲突。
 - `.github/workflows/haos-build.yml`：手动触发 HAOS 镜像构建，默认使用
-  `upstream_ref=dev`、`target=google_kukui`。
+  `upstream_ref=17.3`、`target=google_kukui`。
 
-本地 Linux 环境可按下面方式试跑：
+本地 macOS/Linux 环境可按下面方式试跑：
 
 ```sh
 HAOS_DIR="$PWD/work/haos" HAOS_TARGET=google_kukui sh scripts/bootstrap-haos-upstream.sh
-cd work/haos
-./scripts/enter.sh make google_kukui
+HAOS_DIR="$PWD/work/haos" sh scripts/build-haos-local.sh google_kukui-config
+HAOS_DIR="$PWD/work/haos" sh scripts/build-haos-local.sh google_kukui
 ```
+
+本地构建产物默认保存在 Docker volume `haos-google_kukui-output` 的 `/build/output`
+里；GitHub Actions 仍使用普通 checkout 路径上传 `work/haos/output/images/haos_*`。
+
+构建操作界面、可添加组件、GitHub Actions 全量构建和缓存/复用策略见
+[`docs/haos-build-ux.md`](docs/haos-build-ux.md)。
 
 `google_kukui` 目标使用 ChromeOS Depthcharge 方式启动。kernel 分区使用 ChromeOS
 kernel GUID，kernel cmdline 使用 `root=PARTUUID=%U/PARTNROFF=1`，RAUC 通过
