@@ -3,6 +3,10 @@ name: Build HAOS image (OTBR)
 on:
   workflow_dispatch:
     inputs:
+      upstream_repo:
+        description: "Home Assistant OS upstream repository"
+        required: true
+        default: "https://github.com/home-assistant/operating-system.git"
       upstream_ref:
         description: "home-assistant/operating-system branch or tag"
         required: true
@@ -12,8 +16,17 @@ on:
         required: true
         default: "google_kukui"
 
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: haos-full-${{ github.workflow }}-${{ github.ref }}-${{ inputs.target }}-${{ inputs.upstream_ref }}
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  HAOS_REPO: ${{ inputs.upstream_repo }}
   HAOS_REF: ${{ inputs.upstream_ref }}
   HAOS_TARGET: ${{ inputs.target }}
   HAOS_DIR: ${{ github.workspace }}/work/haos

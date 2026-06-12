@@ -2,11 +2,13 @@
 
 ## Current Operator Interface
 
-This repository currently exposes the HAOS Kukui build through three operator surfaces:
+This repository currently exposes the HAOS Kukui build through a few operator surfaces:
 
 - `README.md`: human-facing runbook for local bring-up.
 - `scripts/haos-buildctl.sh`: the stable command interface for local and CI stages.
 - `scripts/build-haos-local.sh`: the lower-level Docker make executor used by buildctl.
+- `.github/workflows/haos-validate.yml`: automatic lightweight validation and upstream
+  drift probing for HAOS-related paths.
 - `.github/workflows/haos-build.yml`: manually dispatched GitHub Actions build split into
   validation, config, build, and artifact verification jobs.
 - `.github/workflows/haos-builder-image.yml`: GHCR builder-image publication.
@@ -19,8 +21,12 @@ shell scripts, logs, and uploaded artifacts.
 The build is now decomposed into small composable components, exposed through
 `scripts/haos-buildctl.sh`:
 
+- `source-probe`: shallow-clone the configured HAOS upstream into a temporary directory,
+  resolve the pinned ref, initialize submodules, and check the critical paths and patch
+  anchors before a real checkout is touched.
 - `layer-source`: clone or update HAOS, pin the upstream ref, initialize submodules,
   apply Kukui board patches, apply the OTBR kernel fragment, and write source metadata.
+  This layer runs `source-probe` first.
 - `layer-builder`: smoke-check the builder image contract and required tools.
 - `layer-download`: validate the `/cache/dl` mapping and warm fragile Buildroot source
   downloads.
@@ -40,6 +46,7 @@ Local command shape:
 
 ```sh
 scripts/haos-buildctl.sh preflight
+scripts/haos-buildctl.sh source-probe
 scripts/haos-buildctl.sh layer-source
 scripts/haos-buildctl.sh layer-builder
 scripts/haos-buildctl.sh layer-download
@@ -62,13 +69,22 @@ CI can replace the ccache volume with a host path by setting
 Yes, GitHub Actions can build the whole system. The current workflow already supports a
 manual full build with:
 
+- `upstream_repo=https://github.com/home-assistant/operating-system.git`
 - `upstream_ref=17.3`
 - `target=google_kukui`
 
 For CI, the workflow should remain a thin orchestrator around the same scripts used
 locally. That keeps local and CI behavior aligned.
 
-Current workflow shape:
+Lightweight validate/probe workflow:
+
+1. `validate-scripts`: shell syntax, buildctl tests, Kukui patch tests, workflow tests.
+2. `source-probe-17-3`: verify the upstream repo/ref, submodules, key HAOS paths, and
+   patch anchors without touching the formal checkout.
+3. `builder-smoke`: consume the GHCR builder image and check required tools.
+4. `config-google-kukui`: run the source layer, builder layer, and `google_kukui-config`.
+
+Full manual build workflow:
 
 1. `validate-scripts`: shell syntax, buildctl tests, Kukui patch tests, workflow tests.
 2. `config-google-kukui`: restore download and ccache caches, run `layer-source`,
@@ -81,6 +97,12 @@ Current workflow shape:
 The workflow intentionally does not cache the full Buildroot output directory on
 GitHub-hosted runners. That cache is large, slow to restore, and easy to evict. Full
 output reuse should wait for a self-hosted runner.
+
+If the upstream repository moves, a ref disappears, or a patch anchor drifts,
+`source-probe` fails closed. It records the repo/ref, resolved commit when available,
+probe status, patch script checksums, builder image, cache paths, and output reuse mode
+in diagnostics or verification metadata. It does not silently fall back to `dev`, because
+that would trade a reproducible release baseline for an accidental different system.
 
 ## Prebuilt Builder Image
 
@@ -160,6 +182,7 @@ commands and artifact checks.
 - Done: make every stage runnable independently.
 - Done: expose Source, Builder, Download, Compile, and Artifact layers as first-class
   buildctl commands.
+- Done: add `source-probe` for upstream repo/ref, submodule, path, and patch-anchor drift.
 - Next: add richer config assertions for Linux kernel deltas after each upstream bump.
 
 ### Phase 2: Add Fast, Cheap Reuse
@@ -183,6 +206,8 @@ commands and artifact checks.
 ### Phase 4: Split CI by Confidence Level
 
 - Done: split CI into script validation, config, full build, and artifact verification.
+- Done: add lightweight push/PR/scheduled `HAOS validate and upstream probe` workflow.
+- Done: keep the full image workflow manually dispatched only.
 - Done: upload diagnostics on failure even when image artifacts are missing.
 - Next: add scheduled full builds after the first green GHCR builder image exists.
 - Next: promote successful full builds into retained release artifacts.

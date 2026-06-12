@@ -9,17 +9,22 @@ slugify() {
 }
 
 HAOS_REF="${HAOS_REF:-17.3}"
+HAOS_REPO="${HAOS_REPO:-https://github.com/home-assistant/operating-system.git}"
 HAOS_TARGET="${HAOS_TARGET:-google_kukui}"
 HAOS_REF_SLUG="${HAOS_REF_SLUG:-$(slugify "$HAOS_REF")}"
 HAOS_DIR="${HAOS_DIR:-$REPO_ROOT/work/haos}"
 CACHE_DIR="${CACHE_DIR:-$HOME/hassos-cache}"
 EXPORT_DIR="${EXPORT_DIR:-$HAOS_DIR/output-volume-images}"
+HAOS_STATE_DIR="${HAOS_STATE_DIR:-$REPO_ROOT/work/haos-buildctl}"
+HAOS_SOURCE_PROBE_STATE="${HAOS_SOURCE_PROBE_STATE:-$HAOS_STATE_DIR/source-probe.env}"
 HAOS_OUTPUT_VOLUME="${HAOS_OUTPUT_VOLUME:-haos-${HAOS_TARGET}-${HAOS_REF_SLUG}-output}"
 HAOS_CCACHE_VOLUME="${HAOS_CCACHE_VOLUME:-haos-${HAOS_TARGET}-${HAOS_REF_SLUG}-ccache}"
 HAOS_CCACHE_DIR="${HAOS_CCACHE_DIR:-}"
 HAOS_BUILDER_IMAGE="${HAOS_BUILDER_IMAGE:-ghcr.io/tinnci/haos-builder:kukui-17.3}"
 HAOS_DRY_RUN="${HAOS_DRY_RUN:-0}"
 HAOS_CACHE_WARM_TARGETS="${HAOS_CACHE_WARM_TARGETS:-dbus-glib-source os-agent-source tempio-source}"
+HAOS_REF_RESOLVED_COMMIT="${HAOS_REF_RESOLVED_COMMIT:-}"
+HAOS_SOURCE_PROBE_STATUS="${HAOS_SOURCE_PROBE_STATUS:-not-run}"
 
 usage() {
     cat <<'EOF'
@@ -28,6 +33,7 @@ Usage: scripts/haos-buildctl.sh <command>
 Commands:
   help              Show this help.
   preflight         Check local prerequisites and configured paths.
+  source-probe      Validate HAOS_REPO/ref, submodules, critical paths, and patch anchors.
   bootstrap         Clone/update HAOS upstream and apply patches.
   patch             Apply Kukui board and OTBR patches to HAOS_DIR.
   config            Run make google_kukui-config.
@@ -45,6 +51,7 @@ Commands:
 
 Important environment:
   HAOS_REF            Default: 17.3
+  HAOS_REPO           Default: https://github.com/home-assistant/operating-system.git
   HAOS_TARGET         Default: google_kukui
   HAOS_DIR            Default: ./work/haos
   CACHE_DIR           Default: $HOME/hassos-cache
@@ -53,6 +60,7 @@ Important environment:
   HAOS_CCACHE_VOLUME  Default: haos-$HAOS_TARGET-$HAOS_REF_SLUG-ccache
   HAOS_CCACHE_DIR     Optional host path for CI ccache instead of Docker volume.
   HAOS_BUILDER_IMAGE  Default: ghcr.io/tinnci/haos-builder:kukui-17.3
+  HAOS_STATE_DIR      Default: ./work/haos-buildctl
   HAOS_DRY_RUN        Set to 1 to print commands without running Docker.
 EOF
 }
@@ -86,12 +94,88 @@ metadata_file() {
     printf '%s/build-metadata.env\n' "$(metadata_dir)"
 }
 
+read_env_value() {
+    key="$1"
+    file="$2"
+    [ -f "$file" ] || return 0
+    awk -F= -v key="$key" '
+        $1 == key {
+            sub(/^[^=]*=/, "")
+            print
+            exit
+        }
+    ' "$file"
+}
+
+load_source_probe_state() {
+    [ -f "$HAOS_SOURCE_PROBE_STATE" ] || return 0
+
+    state_repo="$(read_env_value HAOS_REPO "$HAOS_SOURCE_PROBE_STATE")"
+    state_ref="$(read_env_value HAOS_REF "$HAOS_SOURCE_PROBE_STATE")"
+    state_target="$(read_env_value HAOS_TARGET "$HAOS_SOURCE_PROBE_STATE")"
+    if [ "$state_repo" != "$HAOS_REPO" ] || [ "$state_ref" != "$HAOS_REF" ] || [ "$state_target" != "$HAOS_TARGET" ]; then
+        HAOS_REF_RESOLVED_COMMIT=""
+        HAOS_SOURCE_PROBE_STATUS="stale"
+        return 0
+    fi
+
+    value="$(read_env_value HAOS_REF_RESOLVED_COMMIT "$HAOS_SOURCE_PROBE_STATE")"
+    [ -z "$value" ] || HAOS_REF_RESOLVED_COMMIT="$value"
+    value="$(read_env_value HAOS_SOURCE_PROBE_STATUS "$HAOS_SOURCE_PROBE_STATE")"
+    [ -z "$value" ] || HAOS_SOURCE_PROBE_STATUS="$value"
+}
+
+write_source_probe_state() {
+    if [ "$HAOS_DRY_RUN" = "1" ]; then
+        log "write $HAOS_SOURCE_PROBE_STATE"
+        return
+    fi
+
+    mkdir -p "$(dirname "$HAOS_SOURCE_PROBE_STATE")"
+    {
+        printf 'HAOS_REPO=%s\n' "$HAOS_REPO"
+        printf 'HAOS_REF=%s\n' "$HAOS_REF"
+        printf 'HAOS_TARGET=%s\n' "$HAOS_TARGET"
+        printf 'HAOS_REF_RESOLVED_COMMIT=%s\n' "${HAOS_REF_RESOLVED_COMMIT:-unknown}"
+        printf 'HAOS_SOURCE_PROBE_STATUS=%s\n' "$HAOS_SOURCE_PROBE_STATUS"
+    } > "$HAOS_SOURCE_PROBE_STATE"
+}
+
+script_sha256() {
+    script="$1"
+    if [ -f "$REPO_ROOT/$script" ]; then
+        shasum -a 256 "$REPO_ROOT/$script" | awk '{ print $1 }'
+    else
+        printf 'missing'
+    fi
+}
+
+output_reuse_mode() {
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        printf 'ephemeral-docker-volume'
+    else
+        printf 'persistent-docker-volume'
+    fi
+}
+
 write_build_metadata() {
     metadata="$(metadata_file)"
+    load_source_probe_state
+    patch_kukui_sha="$(script_sha256 scripts/patch-haos-kukui-board.sh)"
+    patch_otbr_sha="$(script_sha256 scripts/patch-haos-otbr-fragment.sh)"
+    output_reuse="$(output_reuse_mode)"
     if [ "$HAOS_DRY_RUN" = "1" ]; then
         log "write $metadata"
+        log "HAOS_REPO=$HAOS_REPO"
         log "HAOS_REF=$HAOS_REF"
+        log "HAOS_REF_RESOLVED_COMMIT=$HAOS_REF_RESOLVED_COMMIT"
+        log "HAOS_SOURCE_PROBE_STATUS=$HAOS_SOURCE_PROBE_STATUS"
         log "HAOS_TARGET=$HAOS_TARGET"
+        log "PATCH_SCRIPT_SHA256_KUKUI=$patch_kukui_sha"
+        log "PATCH_SCRIPT_SHA256_OTBR=$patch_otbr_sha"
+        log "BUILDER_IMAGE=$HAOS_BUILDER_IMAGE"
+        log "CACHE_DL=/cache/dl"
+        log "OUTPUT_REUSE_MODE=$output_reuse"
         log 'PATCH_SCRIPTS="scripts/patch-haos-kukui-board.sh scripts/patch-haos-otbr-fragment.sh"'
         return
     fi
@@ -103,13 +187,20 @@ write_build_metadata() {
         haos_commit="unknown"
     fi
     {
+        printf 'HAOS_REPO=%s\n' "$HAOS_REPO"
         printf 'HAOS_REF=%s\n' "$HAOS_REF"
+        printf 'HAOS_REF_RESOLVED_COMMIT=%s\n' "${HAOS_REF_RESOLVED_COMMIT:-unknown}"
+        printf 'HAOS_SOURCE_PROBE_STATUS=%s\n' "$HAOS_SOURCE_PROBE_STATUS"
         printf 'HAOS_TARGET=%s\n' "$HAOS_TARGET"
         printf 'HAOS_COMMIT=%s\n' "$haos_commit"
         printf 'HAOS_BUILDER_IMAGE=%s\n' "$HAOS_BUILDER_IMAGE"
+        printf 'BUILDER_IMAGE=%s\n' "$HAOS_BUILDER_IMAGE"
         printf 'HAOS_OUTPUT_VOLUME=%s\n' "$HAOS_OUTPUT_VOLUME"
         printf 'HAOS_CCACHE_VOLUME=%s\n' "$HAOS_CCACHE_VOLUME"
         printf 'CACHE_DL=/cache/dl\n'
+        printf 'OUTPUT_REUSE_MODE=%s\n' "$output_reuse"
+        printf 'PATCH_SCRIPT_SHA256_KUKUI=%s\n' "$patch_kukui_sha"
+        printf 'PATCH_SCRIPT_SHA256_OTBR=%s\n' "$patch_otbr_sha"
         printf 'PATCH_SCRIPTS="scripts/patch-haos-kukui-board.sh scripts/patch-haos-otbr-fragment.sh"\n'
     } > "$metadata"
 }
@@ -142,7 +233,113 @@ write_checksums() {
     fi
 }
 
+source_probe_fail() {
+    stage="$1"
+    detail="${2:-}"
+    HAOS_SOURCE_PROBE_STATUS="failed:$stage"
+    write_source_probe_state || true
+    {
+        printf 'ERROR: source-probe failed at %s\n' "$stage"
+        printf 'HAOS_REPO=%s\n' "$HAOS_REPO"
+        printf 'HAOS_REF=%s\n' "$HAOS_REF"
+        printf 'HAOS_TARGET=%s\n' "$HAOS_TARGET"
+        [ -z "$detail" ] || printf '%s\n' "$detail"
+        printf 'Try workflow_dispatch with explicit upstream_repo/upstream_ref inputs, or update the Kukui patch anchors for the new upstream layout.\n'
+    } >&2
+    [ -z "${SOURCE_PROBE_TMP:-}" ] || rm -rf "$SOURCE_PROBE_TMP"
+    exit 1
+}
+
+source_probe_check_path() {
+    probe_checkout="$1"
+    relpath="$2"
+    log "check $relpath"
+    [ -e "$probe_checkout/$relpath" ] || source_probe_fail "path:$relpath" "Missing required HAOS path: $relpath"
+}
+
+source_probe_check_anchor() {
+    description="$1"
+    pattern="$2"
+    file="$3"
+    grep -Eq "$pattern" "$file" || source_probe_fail "anchor:$description" "Missing patch anchor in $file: $description"
+}
+
+source_probe() {
+    log "source-probe: HAOS_REPO=$HAOS_REPO HAOS_REF=$HAOS_REF"
+    if [ "$HAOS_DRY_RUN" = "1" ]; then
+        log "git ls-remote --exit-code $HAOS_REPO refs/heads/$HAOS_REF refs/tags/$HAOS_REF refs/tags/$HAOS_REF^{}"
+        log "probe checkout: git clone --depth 1 --branch $HAOS_REF --recurse-submodules --shallow-submodules $HAOS_REPO \$TMPDIR/haos-source-probe.XXXXXX/haos"
+        log "check buildroot-external/configs/generic_aarch64_defconfig"
+        log "check buildroot"
+        log "check buildroot-external"
+        log "check buildroot-external/ota/system.conf.gtpl"
+        log "check buildroot-external/scripts/rauc.sh"
+        log "check buildroot-external/scripts/hdd-image.sh"
+        log "check patch anchors"
+        log "SOURCE_PROBE_STATUS=planned"
+        return
+    fi
+
+    command -v git >/dev/null 2>&1 || source_probe_fail "tool:git" "git is required"
+
+    ref_output="$(
+        git ls-remote --exit-code "$HAOS_REPO" \
+            "refs/heads/$HAOS_REF" \
+            "refs/tags/$HAOS_REF" \
+            "refs/tags/$HAOS_REF^{}" 2>&1
+    )" || source_probe_fail "ref-resolution" "$ref_output"
+
+    HAOS_REF_RESOLVED_COMMIT="$(
+        printf '%s\n' "$ref_output" | awk '
+            $2 ~ /\^\{\}$/ { resolved = $1 }
+            NR == 1 { first = $1 }
+            END {
+                if (resolved != "") print resolved
+                else print first
+            }
+        '
+    )"
+    [ -n "$HAOS_REF_RESOLVED_COMMIT" ] || source_probe_fail "ref-resolution" "Resolved ref was empty."
+
+    SOURCE_PROBE_TMP="$(mktemp -d "${TMPDIR:-/tmp}/haos-source-probe.XXXXXX")"
+    probe_checkout="$SOURCE_PROBE_TMP/haos"
+    log "probe checkout: $probe_checkout"
+    git clone --depth 1 --branch "$HAOS_REF" --recurse-submodules --shallow-submodules "$HAOS_REPO" "$probe_checkout" ||
+        source_probe_fail "checkout" "Unable to clone HAOS_REPO=$HAOS_REPO at HAOS_REF=$HAOS_REF"
+
+    source_probe_check_path "$probe_checkout" "buildroot-external/configs/generic_aarch64_defconfig"
+    source_probe_check_path "$probe_checkout" "buildroot"
+    source_probe_check_path "$probe_checkout" "buildroot-external"
+    source_probe_check_path "$probe_checkout" "buildroot-external/ota/system.conf.gtpl"
+    source_probe_check_path "$probe_checkout" "buildroot-external/scripts/rauc.sh"
+    source_probe_check_path "$probe_checkout" "buildroot-external/scripts/hdd-image.sh"
+
+    log "check patch anchors"
+    generic_defconfig="$probe_checkout/buildroot-external/configs/generic_aarch64_defconfig"
+    system_conf="$probe_checkout/buildroot-external/ota/system.conf.gtpl"
+    rauc_sh="$probe_checkout/buildroot-external/scripts/rauc.sh"
+    hdd_image_sh="$probe_checkout/buildroot-external/scripts/hdd-image.sh"
+    dockerfile="$probe_checkout/Dockerfile"
+
+    source_probe_check_anchor "BR2_EXTERNAL path variable" '\$\(BR2_EXTERNAL_[A-Z0-9_]*_PATH\)' "$generic_defconfig"
+    source_probe_check_anchor "kernel config fragment list" '^BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="' "$generic_defconfig"
+    source_probe_check_anchor "RAUC tryboot template branch" 'BOOTLOADER.*tryboot' "$system_conf"
+    source_probe_check_anchor "rauc system.conf template" 'system\.conf\.gtpl' "$rauc_sh"
+    source_probe_check_anchor "hdd image RAUC manifest template" 'manifest\.raucm\.gtpl' "$hdd_image_sh"
+    if [ -f "$dockerfile" ]; then
+        source_probe_check_anchor "builder package insertion point" 'python-is-python3' "$dockerfile"
+    fi
+
+    rm -rf "$SOURCE_PROBE_TMP"
+    SOURCE_PROBE_TMP=""
+    HAOS_SOURCE_PROBE_STATUS="ok"
+    write_source_probe_state
+    log "SOURCE_PROBE_STATUS=$HAOS_SOURCE_PROBE_STATUS"
+    log "HAOS_REF_RESOLVED_COMMIT=$HAOS_REF_RESOLVED_COMMIT"
+}
+
 preflight() {
+    log "HAOS_REPO=$HAOS_REPO"
     log "HAOS_REF=$HAOS_REF"
     log "HAOS_TARGET=$HAOS_TARGET"
     log "HAOS_DIR=$HAOS_DIR"
@@ -165,6 +362,7 @@ preflight() {
 }
 
 bootstrap() {
+    HAOS_REPO="$HAOS_REPO" \
     HAOS_REF="$HAOS_REF" \
     HAOS_TARGET="$HAOS_TARGET" \
     HAOS_DIR="$HAOS_DIR" \
@@ -175,7 +373,7 @@ bootstrap() {
 
 dry_run_source() {
     log "layer-source: bootstrap HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET"
-    log "HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET HAOS_DIR=$HAOS_DIR APPLY_KUKUI=0 APPLY_OTBR=0 sh $REPO_ROOT/scripts/bootstrap-haos-upstream.sh"
+    log "HAOS_REPO=$HAOS_REPO HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET HAOS_DIR=$HAOS_DIR APPLY_KUKUI=0 APPLY_OTBR=0 sh $REPO_ROOT/scripts/bootstrap-haos-upstream.sh"
     log "HAOS_DIR=$HAOS_DIR sh $REPO_ROOT/scripts/patch-haos-kukui-board.sh"
     log "HAOS_DIR=$HAOS_DIR HAOS_TARGET=$HAOS_TARGET sh $REPO_ROOT/scripts/patch-haos-otbr-fragment.sh"
     write_build_metadata
@@ -183,9 +381,11 @@ dry_run_source() {
 
 layer_source() {
     if [ "$HAOS_DRY_RUN" = "1" ]; then
+        source_probe
         dry_run_source
         return
     fi
+    source_probe
     log "layer-source: bootstrap HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET"
     bootstrap
     patch_haos
@@ -399,12 +599,16 @@ cache_warm() {
 }
 
 diagnostics() {
+    load_source_probe_state
+    output_reuse="$(output_reuse_mode)"
     log "== layer status =="
-    log "source: HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET HAOS_DIR=$HAOS_DIR"
+    log "source: HAOS_REPO=$HAOS_REPO HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET HAOS_DIR=$HAOS_DIR"
+    log "source_probe: HAOS_SOURCE_PROBE_STATUS=$HAOS_SOURCE_PROBE_STATUS HAOS_REF_RESOLVED_COMMIT=${HAOS_REF_RESOLVED_COMMIT:-unknown}"
     log "builder: HAOS_BUILDER_IMAGE=$HAOS_BUILDER_IMAGE"
     log "download: $CACHE_DIR/dl -> /cache/dl"
-    log "compile: output=$HAOS_OUTPUT_VOLUME ccache=${HAOS_CCACHE_DIR:-$HAOS_CCACHE_VOLUME}"
+    log "compile: output=$HAOS_OUTPUT_VOLUME ccache=${HAOS_CCACHE_DIR:-$HAOS_CCACHE_VOLUME} output_reuse=$output_reuse"
     log "artifact: EXPORT_DIR=$EXPORT_DIR metadata=$(metadata_dir)"
+    log "source_probe_state: $HAOS_SOURCE_PROBE_STATE"
     log "== disk =="
     df -h "$REPO_ROOT" "$HAOS_DIR" "$CACHE_DIR" "$EXPORT_DIR" 2>/dev/null || true
     log "== git =="
@@ -449,6 +653,7 @@ command="${1:-help}"
 case "$command" in
     help|-h|--help) usage ;;
     preflight) preflight ;;
+    source-probe) source_probe ;;
     bootstrap) bootstrap ;;
     patch) patch_haos ;;
     config) local_make "${HAOS_TARGET}-config" ;;

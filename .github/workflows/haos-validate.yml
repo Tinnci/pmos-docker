@@ -1,0 +1,208 @@
+name: HAOS validate and upstream probe
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/haos-*.yml"
+      - "scripts/haos-*.sh"
+      - "scripts/bootstrap-haos-upstream.sh"
+      - "scripts/patch-haos-*.sh"
+      - "scripts/build-haos-local.sh"
+      - "docker/haos-builder/Dockerfile"
+      - "tests/haos*.sh"
+      - "tests/actions_node24_test.sh"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/haos-*.yml"
+      - "scripts/haos-*.sh"
+      - "scripts/bootstrap-haos-upstream.sh"
+      - "scripts/patch-haos-*.sh"
+      - "scripts/build-haos-local.sh"
+      - "docker/haos-builder/Dockerfile"
+      - "tests/haos*.sh"
+      - "tests/actions_node24_test.sh"
+  schedule:
+    - cron: "17 9 * * 1,4"
+  workflow_dispatch:
+    inputs:
+      upstream_repo:
+        description: "Home Assistant OS upstream repository"
+        required: true
+        default: "https://github.com/home-assistant/operating-system.git"
+      upstream_ref:
+        description: "home-assistant/operating-system branch or tag"
+        required: true
+        default: "17.3"
+      target:
+        description: "HAOS build target"
+        required: true
+        default: "google_kukui"
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: haos-validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  HAOS_REPO: ${{ github.event.inputs.upstream_repo || 'https://github.com/home-assistant/operating-system.git' }}
+  HAOS_REF: ${{ github.event.inputs.upstream_ref || '17.3' }}
+  HAOS_TARGET: ${{ github.event.inputs.target || 'google_kukui' }}
+  HAOS_DIR: ${{ github.workspace }}/work/haos
+  CACHE_DIR: /tmp/haos-cache
+  EXPORT_DIR: ${{ github.workspace }}/work/haos-artifacts
+  HAOS_CCACHE_DIR: /tmp/haos-ccache
+  HAOS_BUILDER_IMAGE: ghcr.io/${{ github.repository_owner }}/haos-builder:kukui-17.3
+
+jobs:
+  validate-scripts:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v6
+
+      - name: Validate shell scripts
+        run: |
+          for file in scripts/*.sh tests/*.sh; do
+            sh -n "$file"
+          done
+
+      - name: Run script tests
+        run: |
+          sh tests/actions_node24_test.sh
+          sh tests/haos_buildctl_test.sh
+          sh tests/haos_kukui_scripts_test.sh
+          sh tests/haos_workflow_test.sh
+
+  source-probe-17-3:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    needs: validate-scripts
+
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v6
+
+      - name: Probe upstream HAOS source
+        run: scripts/haos-buildctl.sh source-probe
+
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          mkdir -p work/diagnostics
+          scripts/haos-buildctl.sh diagnostics > work/diagnostics/source-probe-diagnostics.txt 2>&1 || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: haos-source-probe-diagnostics-${{ github.sha }}
+          path: work/diagnostics
+          if-no-files-found: ignore
+          retention-days: 14
+
+  builder-smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    needs: validate-scripts
+
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v6
+
+      - name: Normalize GHCR image name
+        run: |
+          owner="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "HAOS_BUILDER_IMAGE=ghcr.io/${owner}/haos-builder:kukui-17.3" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check builder layer
+        run: scripts/haos-buildctl.sh layer-builder
+
+  config-google-kukui:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    needs:
+      - source-probe-17-3
+      - builder-smoke
+
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/local/lib/android/sdk/ndk /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Restore Buildroot downloads
+        uses: actions/cache@v5
+        with:
+          path: /tmp/haos-cache/dl
+          key: haos-validate-dl-${{ env.HAOS_REF }}-${{ env.HAOS_TARGET }}-${{ runner.os }}-${{ hashFiles('scripts/*.sh') }}
+          restore-keys: |
+            haos-validate-dl-${{ env.HAOS_REF }}-${{ env.HAOS_TARGET }}-${{ runner.os }}-
+            haos-validate-dl-${{ env.HAOS_REF }}-${{ runner.os }}-
+            haos-validate-dl-
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: /tmp/haos-ccache
+          key: haos-validate-ccache-${{ env.HAOS_REF }}-${{ env.HAOS_TARGET }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            haos-validate-ccache-${{ env.HAOS_REF }}-${{ env.HAOS_TARGET }}-${{ runner.os }}-
+            haos-validate-ccache-${{ env.HAOS_REF }}-${{ runner.os }}-
+            haos-validate-ccache-
+
+      - name: Normalize GHCR image name
+        run: |
+          owner="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "HAOS_BUILDER_IMAGE=ghcr.io/${owner}/haos-builder:kukui-17.3" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare source layer
+        run: scripts/haos-buildctl.sh layer-source
+
+      - name: Check builder layer
+        run: scripts/haos-buildctl.sh layer-builder
+
+      - name: Run Buildroot config
+        run: scripts/haos-buildctl.sh config
+
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          mkdir -p work/diagnostics
+          scripts/haos-buildctl.sh diagnostics > work/diagnostics/config-diagnostics.txt 2>&1 || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: haos-validate-config-diagnostics-${{ github.sha }}
+          path: work/diagnostics
+          if-no-files-found: ignore
+          retention-days: 14

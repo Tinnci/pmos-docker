@@ -33,11 +33,13 @@ assert_contains "$WORKDIR/help.out" "preflight"
 assert_contains "$WORKDIR/help.out" "bootstrap"
 assert_contains "$WORKDIR/help.out" "verify-artifacts"
 assert_contains "$WORKDIR/help.out" "resume-build"
+assert_contains "$WORKDIR/help.out" "source-probe"
 assert_contains "$WORKDIR/help.out" "layer-source"
 assert_contains "$WORKDIR/help.out" "layer-builder"
 assert_contains "$WORKDIR/help.out" "layer-download"
 assert_contains "$WORKDIR/help.out" "layer-compile"
 assert_contains "$WORKDIR/help.out" "layer-artifact"
+assert_contains "$WORKDIR/help.out" "HAOS_REPO"
 assert_contains "$WORKDIR/help.out" "HAOS_CCACHE_VOLUME"
 
 if HAOS_DIR="$WORKDIR/missing" sh "$BUILDCTL" preflight >"$WORKDIR/preflight.out" 2>"$WORKDIR/preflight.err"; then
@@ -52,12 +54,35 @@ HAOS_DIR="$WORKDIR/haos" \
 CACHE_DIR="$WORKDIR/cache" \
 EXPORT_DIR="$WORKDIR/export" \
 HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" source-probe >"$WORKDIR/source-probe.out"
+assert_contains "$WORKDIR/source-probe.out" "source-probe: HAOS_REPO=https://github.com/home-assistant/operating-system.git HAOS_REF=17.3"
+assert_contains "$WORKDIR/source-probe.out" "git ls-remote --exit-code"
+assert_contains "$WORKDIR/source-probe.out" "probe checkout"
+assert_contains "$WORKDIR/source-probe.out" "check buildroot-external/configs/generic_aarch64_defconfig"
+assert_contains "$WORKDIR/source-probe.out" "check buildroot"
+assert_contains "$WORKDIR/source-probe.out" "check buildroot-external"
+assert_contains "$WORKDIR/source-probe.out" "check buildroot-external/ota/system.conf.gtpl"
+assert_contains "$WORKDIR/source-probe.out" "check buildroot-external/scripts/hdd-image.sh"
+assert_contains "$WORKDIR/source-probe.out" "check patch anchors"
+assert_contains "$WORKDIR/source-probe.out" "SOURCE_PROBE_STATUS=planned"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
     sh "$BUILDCTL" layer-source >"$WORKDIR/layer-source.out"
+assert_contains "$WORKDIR/layer-source.out" "source-probe: HAOS_REPO=https://github.com/home-assistant/operating-system.git HAOS_REF=17.3"
 assert_contains "$WORKDIR/layer-source.out" "layer-source: bootstrap HAOS_REF=17.3 HAOS_TARGET=google_kukui"
 assert_contains "$WORKDIR/layer-source.out" "scripts/bootstrap-haos-upstream.sh"
 assert_contains "$WORKDIR/layer-source.out" "scripts/patch-haos-kukui-board.sh"
 assert_contains "$WORKDIR/layer-source.out" "scripts/patch-haos-otbr-fragment.sh"
 assert_contains "$WORKDIR/layer-source.out" "verification/build-metadata.env"
+assert_contains "$WORKDIR/layer-source.out" "HAOS_REPO=https://github.com/home-assistant/operating-system.git"
+assert_contains "$WORKDIR/layer-source.out" "HAOS_REF_RESOLVED_COMMIT="
+assert_contains "$WORKDIR/layer-source.out" "HAOS_SOURCE_PROBE_STATUS="
+assert_contains "$WORKDIR/layer-source.out" "PATCH_SCRIPT_SHA256_KUKUI="
+assert_contains "$WORKDIR/layer-source.out" "PATCH_SCRIPT_SHA256_OTBR="
+assert_contains "$WORKDIR/layer-source.out" "OUTPUT_REUSE_MODE="
 
 HAOS_DIR="$WORKDIR/haos" \
 CACHE_DIR="$WORKDIR/cache" \
@@ -149,5 +174,8 @@ HAOS_DRY_RUN=1 \
     sh "$BUILDCTL" diagnostics >"$WORKDIR/diagnostics.out"
 assert_contains "$WORKDIR/diagnostics.out" "== failed Buildroot stamps =="
 assert_contains "$WORKDIR/diagnostics.out" "== HAOS checkout diff =="
+assert_contains "$WORKDIR/diagnostics.out" "HAOS_REPO=https://github.com/home-assistant/operating-system.git"
+assert_contains "$WORKDIR/diagnostics.out" "HAOS_SOURCE_PROBE_STATUS="
+assert_contains "$WORKDIR/diagnostics.out" "output_reuse="
 
 echo "haos buildctl tests passed"

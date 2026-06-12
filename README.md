@@ -20,6 +20,7 @@ target using:
 
 Default baseline:
 
+- HAOS upstream repo: `https://github.com/home-assistant/operating-system.git`
 - HAOS upstream ref: `17.3`
 - Target: `google_kukui`
 - Builder image: `ghcr.io/tinnci/haos-builder:kukui-17.3`
@@ -28,14 +29,19 @@ Local build:
 
 ```sh
 export HAOS_DIR="$PWD/work/haos"
+export HAOS_REPO=https://github.com/home-assistant/operating-system.git
 export HAOS_BUILDER_IMAGE=ghcr.io/tinnci/haos-builder:kukui-17.3
 
+scripts/haos-buildctl.sh source-probe
 scripts/haos-buildctl.sh layer-source
 scripts/haos-buildctl.sh layer-builder
 scripts/haos-buildctl.sh layer-download
 scripts/haos-buildctl.sh layer-compile
 scripts/haos-buildctl.sh layer-artifact
 ```
+
+`layer-source` also runs `source-probe`; call `source-probe` alone when you only
+want to check upstream drift before spending time on a checkout/build.
 
 Useful recovery commands:
 
@@ -52,6 +58,8 @@ Local cache/volume defaults:
 
 GitHub Actions:
 
+- `HAOS validate and upstream probe`: automatic lightweight validation for HAOS
+  scripts, workflows, upstream source drift, builder smoke checks, and target config.
 - `Build HAOS builder image`: builds/pushes the GHCR builder image on relevant
   Dockerfile/workflow changes.
 - `Build HAOS image (OTBR)`: manual full HAOS image build with validation,
