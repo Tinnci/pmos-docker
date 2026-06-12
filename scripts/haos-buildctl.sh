@@ -17,7 +17,7 @@ EXPORT_DIR="${EXPORT_DIR:-$HAOS_DIR/output-volume-images}"
 HAOS_OUTPUT_VOLUME="${HAOS_OUTPUT_VOLUME:-haos-${HAOS_TARGET}-${HAOS_REF_SLUG}-output}"
 HAOS_CCACHE_VOLUME="${HAOS_CCACHE_VOLUME:-haos-${HAOS_TARGET}-${HAOS_REF_SLUG}-ccache}"
 HAOS_CCACHE_DIR="${HAOS_CCACHE_DIR:-}"
-HAOS_BUILDER_IMAGE="${HAOS_BUILDER_IMAGE:-hassos:local}"
+HAOS_BUILDER_IMAGE="${HAOS_BUILDER_IMAGE:-ghcr.io/tinnci/haos-builder:kukui-17.3}"
 HAOS_DRY_RUN="${HAOS_DRY_RUN:-0}"
 HAOS_CACHE_WARM_TARGETS="${HAOS_CACHE_WARM_TARGETS:-dbus-glib-source os-agent-source tempio-source}"
 
@@ -37,6 +37,11 @@ Commands:
   verify-artifacts  Verify exported image, RAUC bundle, kernel.img, GPT GUIDs, and RAUC backend.
   cache-warm        Prefetch unstable source/vendor tarballs into /cache/dl.
   diagnostics       Print disk, Docker, git, and artifact diagnostics.
+  layer-source      Prepare HAOS source, Kukui patches, OTBR fragment, and source metadata.
+  layer-builder     Smoke-check the HAOS builder image tool contract.
+  layer-download    Warm Buildroot and vendored source downloads under /cache/dl.
+  layer-compile     Run target config and full target build with output/ccache reuse.
+  layer-artifact    Export, checksum, and verify image artifacts.
 
 Important environment:
   HAOS_REF            Default: 17.3
@@ -47,7 +52,7 @@ Important environment:
   HAOS_OUTPUT_VOLUME  Default: haos-$HAOS_TARGET-$HAOS_REF_SLUG-output
   HAOS_CCACHE_VOLUME  Default: haos-$HAOS_TARGET-$HAOS_REF_SLUG-ccache
   HAOS_CCACHE_DIR     Optional host path for CI ccache instead of Docker volume.
-  HAOS_BUILDER_IMAGE  Default: hassos:local
+  HAOS_BUILDER_IMAGE  Default: ghcr.io/tinnci/haos-builder:kukui-17.3
   HAOS_DRY_RUN        Set to 1 to print commands without running Docker.
 EOF
 }
@@ -71,6 +76,70 @@ run_cmd() {
 
 require_haos_dir() {
     [ -d "$HAOS_DIR" ] || die "HAOS_DIR does not exist: $HAOS_DIR"
+}
+
+metadata_dir() {
+    printf '%s/verification\n' "$EXPORT_DIR"
+}
+
+metadata_file() {
+    printf '%s/build-metadata.env\n' "$(metadata_dir)"
+}
+
+write_build_metadata() {
+    metadata="$(metadata_file)"
+    if [ "$HAOS_DRY_RUN" = "1" ]; then
+        log "write $metadata"
+        log "HAOS_REF=$HAOS_REF"
+        log "HAOS_TARGET=$HAOS_TARGET"
+        log 'PATCH_SCRIPTS="scripts/patch-haos-kukui-board.sh scripts/patch-haos-otbr-fragment.sh"'
+        return
+    fi
+
+    mkdir -p "$(metadata_dir)"
+    if [ -d "$HAOS_DIR/.git" ]; then
+        haos_commit="$(git -C "$HAOS_DIR" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+    else
+        haos_commit="unknown"
+    fi
+    {
+        printf 'HAOS_REF=%s\n' "$HAOS_REF"
+        printf 'HAOS_TARGET=%s\n' "$HAOS_TARGET"
+        printf 'HAOS_COMMIT=%s\n' "$haos_commit"
+        printf 'HAOS_BUILDER_IMAGE=%s\n' "$HAOS_BUILDER_IMAGE"
+        printf 'HAOS_OUTPUT_VOLUME=%s\n' "$HAOS_OUTPUT_VOLUME"
+        printf 'HAOS_CCACHE_VOLUME=%s\n' "$HAOS_CCACHE_VOLUME"
+        printf 'CACHE_DL=/cache/dl\n'
+        printf 'PATCH_SCRIPTS="scripts/patch-haos-kukui-board.sh scripts/patch-haos-otbr-fragment.sh"\n'
+    } > "$metadata"
+}
+
+write_checksums() {
+    checksum_file="$(metadata_dir)/SHA256SUMS"
+    if [ "$HAOS_DRY_RUN" = "1" ]; then
+        log "write $checksum_file"
+        return
+    fi
+
+    mkdir -p "$(metadata_dir)"
+    checksum_inputs="$(
+        find "$EXPORT_DIR" -maxdepth 1 -type f \( \
+            -name 'kernel.img' -o \
+            -name 'haos_google-kukui-*.img.xz' -o \
+            -name 'haos_google-kukui-*.raucb' -o \
+            -name '*.dtb' \
+        \) -print 2>/dev/null | sort
+    )"
+    if [ -n "$checksum_inputs" ]; then
+        (
+            cd "$EXPORT_DIR"
+            printf '%s\n' "$checksum_inputs" |
+                sed "s|^$EXPORT_DIR/||" |
+                xargs shasum -a 256
+        ) > "$checksum_file"
+    else
+        : > "$checksum_file"
+    fi
 }
 
 preflight() {
@@ -104,6 +173,25 @@ bootstrap() {
         sh "$REPO_ROOT/scripts/bootstrap-haos-upstream.sh"
 }
 
+dry_run_source() {
+    log "layer-source: bootstrap HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET"
+    log "HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET HAOS_DIR=$HAOS_DIR APPLY_KUKUI=0 APPLY_OTBR=0 sh $REPO_ROOT/scripts/bootstrap-haos-upstream.sh"
+    log "HAOS_DIR=$HAOS_DIR sh $REPO_ROOT/scripts/patch-haos-kukui-board.sh"
+    log "HAOS_DIR=$HAOS_DIR HAOS_TARGET=$HAOS_TARGET sh $REPO_ROOT/scripts/patch-haos-otbr-fragment.sh"
+    write_build_metadata
+}
+
+layer_source() {
+    if [ "$HAOS_DRY_RUN" = "1" ]; then
+        dry_run_source
+        return
+    fi
+    log "layer-source: bootstrap HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET"
+    bootstrap
+    patch_haos
+    write_build_metadata
+}
+
 patch_haos() {
     require_haos_dir
     HAOS_DIR="$HAOS_DIR" sh "$REPO_ROOT/scripts/patch-haos-kukui-board.sh"
@@ -132,6 +220,62 @@ local_make() {
     HAOS_CCACHE_DIR="$HAOS_CCACHE_DIR" \
     HAOS_BUILDER_IMAGE="$HAOS_BUILDER_IMAGE" \
         sh "$REPO_ROOT/scripts/build-haos-local.sh" "$target"
+}
+
+builder_smoke_script() {
+    cat <<'EOF'
+set -eu
+command -v make
+command -v git
+command -v ccache
+command -v sgdisk
+command -v xz
+command -v zstd
+command -v mkfs.erofs
+command -v mksquashfs
+command -v mkfs.ext4
+command -v mkfs.vfat
+if command -v vbutil_kernel >/dev/null 2>&1; then
+    command -v vbutil_kernel
+elif command -v futility >/dev/null 2>&1; then
+    command -v futility
+elif command -v cgpt >/dev/null 2>&1; then
+    command -v cgpt
+else
+    echo "missing vboot utility: expected vbutil_kernel, futility, or cgpt" >&2
+    exit 1
+fi
+EOF
+}
+
+layer_builder() {
+    log "layer-builder: smoke-check $HAOS_BUILDER_IMAGE"
+    smoke_script="$(builder_smoke_script)"
+    if [ "$HAOS_DRY_RUN" = "1" ]; then
+        log "docker run --rm $HAOS_BUILDER_IMAGE sh -lc '$smoke_script'"
+        return
+    fi
+    docker run --rm "$HAOS_BUILDER_IMAGE" sh -lc "$smoke_script"
+}
+
+layer_download() {
+    log "layer-download: warm $CACHE_DIR/dl as /cache/dl"
+    cache_warm
+}
+
+layer_compile() {
+    log "layer-compile: config $HAOS_TARGET"
+    local_make "${HAOS_TARGET}-config"
+    log "layer-compile: build $HAOS_TARGET"
+    local_make "$HAOS_TARGET"
+}
+
+layer_artifact() {
+    log "layer-artifact: export artifacts to $EXPORT_DIR"
+    export_artifacts
+    write_build_metadata
+    write_checksums
+    verify_artifacts
 }
 
 resume_build() {
@@ -189,6 +333,7 @@ verify_artifacts() {
         log "verify kernel.img at $kernel_img"
         log "verify haos_google-kukui-*.img.xz at $img_xz"
         log "verify haos_google-kukui-*.raucb at $raucb"
+        log "verify mt8183-kukui*.dtb at $EXPORT_DIR"
         log "verify ChromeOS kernel GUIDs with sgdisk"
         log "verify RAUC bootloader=custom and depthcharge-backend"
         return
@@ -200,8 +345,11 @@ verify_artifacts() {
     image_xz="$1"
     set -- $raucb
     [ -f "$1" ] || die "missing haos_google-kukui-*.raucb in $EXPORT_DIR"
+    bundle="$1"
+    set -- "$EXPORT_DIR"/mt8183-kukui*.dtb
+    [ -f "$1" ] || die "missing mt8183-kukui*.dtb in $EXPORT_DIR"
 
-    file "$kernel_img" "$image_xz" "$1"
+    file "$kernel_img" "$image_xz" "$bundle" "$EXPORT_DIR"/mt8183-kukui*.dtb
 
     if docker volume inspect "$HAOS_OUTPUT_VOLUME" >/dev/null 2>&1; then
         docker run --rm -v "$HAOS_OUTPUT_VOLUME:/out:ro" "$HAOS_BUILDER_IMAGE" sh -lc '
@@ -251,6 +399,12 @@ cache_warm() {
 }
 
 diagnostics() {
+    log "== layer status =="
+    log "source: HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET HAOS_DIR=$HAOS_DIR"
+    log "builder: HAOS_BUILDER_IMAGE=$HAOS_BUILDER_IMAGE"
+    log "download: $CACHE_DIR/dl -> /cache/dl"
+    log "compile: output=$HAOS_OUTPUT_VOLUME ccache=${HAOS_CCACHE_DIR:-$HAOS_CCACHE_VOLUME}"
+    log "artifact: EXPORT_DIR=$EXPORT_DIR metadata=$(metadata_dir)"
     log "== disk =="
     df -h "$REPO_ROOT" "$HAOS_DIR" "$CACHE_DIR" "$EXPORT_DIR" 2>/dev/null || true
     log "== git =="
@@ -304,6 +458,11 @@ case "$command" in
     verify-artifacts) verify_artifacts ;;
     cache-warm) cache_warm ;;
     diagnostics) diagnostics ;;
+    layer-source) layer_source ;;
+    layer-builder) layer_builder ;;
+    layer-download) layer_download ;;
+    layer-compile) layer_compile ;;
+    layer-artifact) layer_artifact ;;
     *)
         usage >&2
         die "unknown command: $command"

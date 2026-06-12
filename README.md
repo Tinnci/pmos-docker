@@ -30,13 +30,11 @@ Local build:
 export HAOS_DIR="$PWD/work/haos"
 export HAOS_BUILDER_IMAGE=ghcr.io/tinnci/haos-builder:kukui-17.3
 
-scripts/haos-buildctl.sh bootstrap
-scripts/haos-buildctl.sh patch
-scripts/haos-buildctl.sh config
-scripts/haos-buildctl.sh cache-warm
-scripts/haos-buildctl.sh build
-scripts/haos-buildctl.sh export-artifacts
-scripts/haos-buildctl.sh verify-artifacts
+scripts/haos-buildctl.sh layer-source
+scripts/haos-buildctl.sh layer-builder
+scripts/haos-buildctl.sh layer-download
+scripts/haos-buildctl.sh layer-compile
+scripts/haos-buildctl.sh layer-artifact
 ```
 
 Useful recovery commands:

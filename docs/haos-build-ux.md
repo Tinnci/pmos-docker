@@ -19,20 +19,20 @@ shell scripts, logs, and uploaded artifacts.
 The build is now decomposed into small composable components, exposed through
 `scripts/haos-buildctl.sh`:
 
-- `preflight`: check disk space, Docker availability, builder image, cache directory, and
-  HAOS checkout state before any long build starts.
-- `bootstrap`: clone or update `home-assistant/operating-system`, checkout the locked
-  upstream ref, and initialize submodules.
-- `patch`: apply the Kukui board integration and OTBR kernel fragment idempotently.
-- `config`: run `make google_kukui-config` and verify generated Buildroot and Linux
-  config values.
-- `build`: run the full target build.
-- `verify-artifacts`: check `kernel.img`, `.img.xz`, `.raucb`, ChromeOS kernel GPT GUIDs,
-  RAUC custom backend, and expected DTB output.
-- `export-artifacts`: copy images out of a Docker volume or CI workspace.
-- `cache-warm`: prefetch unstable source archives or Go vendored tarballs into `/cache/dl`.
-- `diagnostics`: collect free space, Docker usage, Buildroot failed package logs, and
-  last relevant build commands.
+- `layer-source`: clone or update HAOS, pin the upstream ref, initialize submodules,
+  apply Kukui board patches, apply the OTBR kernel fragment, and write source metadata.
+- `layer-builder`: smoke-check the builder image contract and required tools.
+- `layer-download`: validate the `/cache/dl` mapping and warm fragile Buildroot source
+  downloads.
+- `layer-compile`: run `google_kukui-config` and the full `google_kukui` build with
+  output and ccache reuse.
+- `layer-artifact`: export, checksum, and verify `kernel.img`, DTBs, `.img.xz`, `.raucb`,
+  RAUC backend metadata, and ChromeOS kernel GPT GUIDs.
+- Lower-level commands such as `bootstrap`, `patch`, `config`, `cache-warm`, `build`,
+  `resume-build`, `export-artifacts`, and `verify-artifacts` remain available for
+  targeted recovery.
+- `diagnostics`: collect layer status, free space, Docker usage, failed Buildroot stamps,
+  recent logs, artifacts, and cache paths.
 
 These components can be called locally and from GitHub Actions with the same arguments.
 
@@ -40,13 +40,11 @@ Local command shape:
 
 ```sh
 scripts/haos-buildctl.sh preflight
-scripts/haos-buildctl.sh bootstrap
-scripts/haos-buildctl.sh patch
-scripts/haos-buildctl.sh config
-scripts/haos-buildctl.sh cache-warm
-scripts/haos-buildctl.sh build
-scripts/haos-buildctl.sh export-artifacts
-scripts/haos-buildctl.sh verify-artifacts
+scripts/haos-buildctl.sh layer-source
+scripts/haos-buildctl.sh layer-builder
+scripts/haos-buildctl.sh layer-download
+scripts/haos-buildctl.sh layer-compile
+scripts/haos-buildctl.sh layer-artifact
 ```
 
 Default local cache and volume contract:
@@ -54,8 +52,7 @@ Default local cache and volume contract:
 - Output volume: `haos-google_kukui-17-3-output`
 - ccache volume: `haos-google_kukui-17-3-ccache`
 - Download cache: `$HOME/hassos-cache/dl`
-- Builder image: `hassos:local` locally, or
-  `ghcr.io/Tinnci/haos-builder:kukui-17.3` when the prebuilt image is available.
+- Builder image: `ghcr.io/tinnci/haos-builder:kukui-17.3`.
 
 CI can replace the ccache volume with a host path by setting
 `HAOS_CCACHE_DIR=/tmp/haos-ccache`, which lets `actions/cache` persist it.
@@ -74,10 +71,10 @@ locally. That keeps local and CI behavior aligned.
 Current workflow shape:
 
 1. `validate-scripts`: shell syntax, buildctl tests, Kukui patch tests, workflow tests.
-2. `config-google-kukui`: restore download and ccache caches, bootstrap HAOS, apply
-   Kukui/OTBR patches, run `google_kukui-config`, upload diagnostics.
-3. `build-google-kukui`: restore caches, bootstrap HAOS, apply patches, run config,
-   warm package source cache, build the image, export artifacts, upload diagnostics.
+2. `config-google-kukui`: restore download and ccache caches, run `layer-source`,
+   run `layer-builder`, run `google_kukui-config`, upload diagnostics.
+3. `build-google-kukui`: restore caches, run `layer-source`, `layer-builder`,
+   `layer-download`, `layer-compile`, and `layer-artifact`, upload diagnostics.
 4. `verify-artifacts`: download exported artifacts and verify `.img.xz`, `.raucb`,
    `kernel.img`, ChromeOS GPT GUIDs, and exported RAUC backend metadata.
 
@@ -95,13 +92,13 @@ ghcr.io/Tinnci/haos-builder:kukui-17.3
 ```
 
 It preinstalls stable host-side dependencies such as compiler tools, `gdisk`, `ccache`,
-`vboot-utils`, filesystem tools, and compression tools. The main image build workflow can
-then avoid repeated apt setup and focus on HAOS/Buildroot work.
+`vboot-utils`, filesystem tools, and compression tools. `layer-builder` smoke-checks
+that contract before long builds start.
 
 When running locally, use the prebuilt image by setting:
 
 ```sh
-export HAOS_BUILDER_IMAGE=ghcr.io/Tinnci/haos-builder:kukui-17.3
+export HAOS_BUILDER_IMAGE=ghcr.io/tinnci/haos-builder:kukui-17.3
 ```
 
 ## Build Reuse Strategy
@@ -127,6 +124,8 @@ Pieces that should stay target-built:
 - Disk image layout.
 - RAUC bundle and manifest.
 - Board-specific boot backend and slot attributes.
+- Verification metadata: `verification/SHA256SUMS` and
+  `verification/build-metadata.env`.
 
 ## Do We Need to Build Every Package from Source?
 
@@ -159,6 +158,8 @@ commands and artifact checks.
 - Done: keep `scripts/build-haos-local.sh` as the Docker make executor used by buildctl.
 - Done: keep patch scripts idempotent and macOS/Linux-safe.
 - Done: make every stage runnable independently.
+- Done: expose Source, Builder, Download, Compile, and Artifact layers as first-class
+  buildctl commands.
 - Next: add richer config assertions for Linux kernel deltas after each upstream bump.
 
 ### Phase 2: Add Fast, Cheap Reuse

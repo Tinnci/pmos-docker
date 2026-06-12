@@ -39,7 +39,11 @@ assert_contains "$BUILD_WORKFLOW" "actions/download-artifact@v7"
 assert_contains "$BUILD_WORKFLOW" "/tmp/haos-cache/dl"
 assert_contains "$BUILD_WORKFLOW" "/tmp/haos-ccache"
 assert_contains "$BUILD_WORKFLOW" "scripts/haos-buildctl.sh diagnostics"
-assert_contains "$BUILD_WORKFLOW" "scripts/haos-buildctl.sh patch"
+assert_contains "$BUILD_WORKFLOW" "scripts/haos-buildctl.sh layer-source"
+assert_contains "$BUILD_WORKFLOW" "scripts/haos-buildctl.sh layer-builder"
+assert_contains "$BUILD_WORKFLOW" "scripts/haos-buildctl.sh layer-download"
+assert_contains "$BUILD_WORKFLOW" "scripts/haos-buildctl.sh layer-compile"
+assert_contains "$BUILD_WORKFLOW" "scripts/haos-buildctl.sh layer-artifact"
 assert_contains "$BUILD_WORKFLOW" 'ghcr.io/${{ github.repository_owner }}/haos-builder:kukui-17.3'
 assert_contains "$BUILD_WORKFLOW" "tr '[:upper:]' '[:lower:]'"
 

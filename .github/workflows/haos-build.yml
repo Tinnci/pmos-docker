@@ -39,6 +39,7 @@ jobs:
 
       - name: Run script tests
         run: |
+          sh tests/actions_node24_test.sh
           sh tests/haos_buildctl_test.sh
           sh tests/haos_kukui_scripts_test.sh
           sh tests/haos_workflow_test.sh
@@ -90,11 +91,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bootstrap HAOS source
-        run: scripts/haos-buildctl.sh bootstrap
+      - name: Prepare source layer
+        run: scripts/haos-buildctl.sh layer-source
 
-      - name: Apply Kukui HAOS patches
-        run: scripts/haos-buildctl.sh patch
+      - name: Check builder layer
+        run: scripts/haos-buildctl.sh layer-builder
 
       - name: Run Buildroot config
         run: scripts/haos-buildctl.sh config
@@ -161,24 +162,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bootstrap HAOS source
-        run: scripts/haos-buildctl.sh bootstrap
+      - name: Prepare source layer
+        run: scripts/haos-buildctl.sh layer-source
 
-      - name: Apply Kukui HAOS patches
-        run: scripts/haos-buildctl.sh patch
+      - name: Check builder layer
+        run: scripts/haos-buildctl.sh layer-builder
 
-      - name: Run Buildroot config
-        run: scripts/haos-buildctl.sh config
+      - name: Warm download layer
+        run: scripts/haos-buildctl.sh layer-download
 
-      - name: Warm source cache
-        run: scripts/haos-buildctl.sh cache-warm
+      - name: Build compile layer
+        run: scripts/haos-buildctl.sh layer-compile
 
-      - name: Build HAOS image
-        run: scripts/haos-buildctl.sh build
-
-      - name: Export HAOS artifacts
-        if: always()
-        run: scripts/haos-buildctl.sh export-artifacts || true
+      - name: Export artifact layer
+        run: scripts/haos-buildctl.sh layer-artifact
 
       - name: Collect diagnostics
         if: always()

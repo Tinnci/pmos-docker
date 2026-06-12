@@ -33,6 +33,11 @@ assert_contains "$WORKDIR/help.out" "preflight"
 assert_contains "$WORKDIR/help.out" "bootstrap"
 assert_contains "$WORKDIR/help.out" "verify-artifacts"
 assert_contains "$WORKDIR/help.out" "resume-build"
+assert_contains "$WORKDIR/help.out" "layer-source"
+assert_contains "$WORKDIR/help.out" "layer-builder"
+assert_contains "$WORKDIR/help.out" "layer-download"
+assert_contains "$WORKDIR/help.out" "layer-compile"
+assert_contains "$WORKDIR/help.out" "layer-artifact"
 assert_contains "$WORKDIR/help.out" "HAOS_CCACHE_VOLUME"
 
 if HAOS_DIR="$WORKDIR/missing" sh "$BUILDCTL" preflight >"$WORKDIR/preflight.out" 2>"$WORKDIR/preflight.err"; then
@@ -42,6 +47,59 @@ fi
 assert_contains "$WORKDIR/preflight.err" "HAOS_DIR does not exist"
 
 mkdir -p "$WORKDIR/haos" "$WORKDIR/cache" "$WORKDIR/export"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" layer-source >"$WORKDIR/layer-source.out"
+assert_contains "$WORKDIR/layer-source.out" "layer-source: bootstrap HAOS_REF=17.3 HAOS_TARGET=google_kukui"
+assert_contains "$WORKDIR/layer-source.out" "scripts/bootstrap-haos-upstream.sh"
+assert_contains "$WORKDIR/layer-source.out" "scripts/patch-haos-kukui-board.sh"
+assert_contains "$WORKDIR/layer-source.out" "scripts/patch-haos-otbr-fragment.sh"
+assert_contains "$WORKDIR/layer-source.out" "verification/build-metadata.env"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" layer-builder >"$WORKDIR/layer-builder.out"
+assert_contains "$WORKDIR/layer-builder.out" "layer-builder: smoke-check"
+assert_contains "$WORKDIR/layer-builder.out" "command -v make"
+assert_contains "$WORKDIR/layer-builder.out" "command -v git"
+assert_contains "$WORKDIR/layer-builder.out" "command -v ccache"
+assert_contains "$WORKDIR/layer-builder.out" "command -v sgdisk"
+assert_contains "$WORKDIR/layer-builder.out" "vbutil_kernel"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" layer-download >"$WORKDIR/layer-download.out"
+assert_contains "$WORKDIR/layer-download.out" "/cache/dl"
+assert_contains "$WORKDIR/layer-download.out" "dbus-glib-source os-agent-source tempio-source"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" layer-compile >"$WORKDIR/layer-compile.out"
+assert_contains "$WORKDIR/layer-compile.out" "make google_kukui-config"
+assert_contains "$WORKDIR/layer-compile.out" "make google_kukui"
+assert_contains "$WORKDIR/layer-compile.out" "/build/output"
+assert_contains "$WORKDIR/layer-compile.out" "/ccache"
+
+HAOS_DIR="$WORKDIR/haos" \
+CACHE_DIR="$WORKDIR/cache" \
+EXPORT_DIR="$WORKDIR/export" \
+HAOS_DRY_RUN=1 \
+    sh "$BUILDCTL" layer-artifact >"$WORKDIR/layer-artifact.out"
+assert_contains "$WORKDIR/layer-artifact.out" "cp -av /out/images/. /export/"
+assert_contains "$WORKDIR/layer-artifact.out" "verification/SHA256SUMS"
+assert_contains "$WORKDIR/layer-artifact.out" "verification/build-metadata.env"
+assert_contains "$WORKDIR/layer-artifact.out" "verify kernel.img"
+assert_contains "$WORKDIR/layer-artifact.out" "verify mt8183-kukui*.dtb"
+assert_contains "$WORKDIR/layer-artifact.out" "verify ChromeOS kernel GUIDs"
 
 HAOS_DIR="$WORKDIR/haos" \
 CACHE_DIR="$WORKDIR/cache" \
