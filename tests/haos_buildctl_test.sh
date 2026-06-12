@@ -6,6 +6,15 @@ BUILDCTL="$REPO_ROOT/scripts/haos-buildctl.sh"
 TMPDIR="${TMPDIR:-/tmp}"
 WORKDIR="$(mktemp -d "$TMPDIR/haos-buildctl-test.XXXXXX")"
 
+unset HAOS_BUILDER_IMAGE
+unset HAOS_CCACHE_DIR
+unset HAOS_CCACHE_VOLUME
+unset HAOS_OUTPUT_VOLUME
+unset HAOS_REF
+unset HAOS_REPO
+unset HAOS_STATE_DIR
+unset HAOS_TARGET
+
 cleanup() {
     rm -rf "$WORKDIR"
 }

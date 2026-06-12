@@ -26,16 +26,20 @@ for file in "$WORKFLOWS_DIR"/*.yml; do
     assert_contains "$file" 'FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"'
 done
 
-if rg -n \
-    -e 'actions/checkout@v4' \
-    -e 'docker/login-action@v3' \
-    -e 'docker/build-push-action@v6' \
-    -e 'actions/cache(@|/(restore|save)@)v4' \
-    -e 'actions/upload-artifact@v4' \
-    -e 'actions/download-artifact@v4' \
-    "$WORKFLOWS_DIR" >"$WORKDIR/deprecated-actions.txt"; then
+deprecated_actions='actions/checkout@v4|docker/login-action@v3|docker/build-push-action@v6|actions/cache(@|/(restore|save)@)v4|actions/upload-artifact@v4|actions/download-artifact@v4'
+if command -v rg >/dev/null 2>&1; then
+    scan_status=0
+    rg -n -e "$deprecated_actions" "$WORKFLOWS_DIR" >"$WORKDIR/deprecated-actions.txt" || scan_status=$?
+else
+    scan_status=0
+    grep -R -n -E "$deprecated_actions" "$WORKFLOWS_DIR" >"$WORKDIR/deprecated-actions.txt" || scan_status=$?
+fi
+if [ "$scan_status" -eq 0 ]; then
     cat "$WORKDIR/deprecated-actions.txt" >&2
     fail "deprecated Node.js 20 GitHub action pins remain"
+fi
+if [ "$scan_status" -gt 1 ]; then
+    fail "failed to scan workflows for deprecated Node.js 20 action pins"
 fi
 
 assert_contains "$WORKFLOWS_DIR/haos-builder-image.yml" "actions/checkout@v6"
