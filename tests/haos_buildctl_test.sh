@@ -113,6 +113,7 @@ HAOS_DRY_RUN=1 \
 assert_contains "$WORKDIR/layer-download.out" "/cache/dl"
 assert_contains "$WORKDIR/layer-download.out" "make google_kukui-config"
 assert_contains "$WORKDIR/layer-download.out" "dbus-glib-source os-agent-source tempio-source"
+assert_contains "$WORKDIR/layer-download.out" "FORCE_UNSAFE_CONFIGURE=1"
 
 HAOS_DIR="$WORKDIR/haos" \
 CACHE_DIR="$WORKDIR/cache" \
@@ -123,6 +124,7 @@ assert_contains "$WORKDIR/layer-compile.out" "make google_kukui-config"
 assert_contains "$WORKDIR/layer-compile.out" "make google_kukui"
 assert_contains "$WORKDIR/layer-compile.out" "/build/output"
 assert_contains "$WORKDIR/layer-compile.out" "/ccache"
+assert_contains "$WORKDIR/layer-compile.out" "FORCE_UNSAFE_CONFIGURE=1"
 
 HAOS_DIR="$WORKDIR/haos" \
 CACHE_DIR="$WORKDIR/cache" \
@@ -145,6 +147,7 @@ assert_contains "$WORKDIR/config.out" "make google_kukui-config"
 assert_contains "$WORKDIR/config.out" "haos-google_kukui-17-3-output:/build/output"
 assert_contains "$WORKDIR/config.out" "haos-google_kukui-17-3-ccache:/ccache"
 assert_contains "$WORKDIR/config.out" "BR2_DL_DIR=/cache/dl"
+assert_contains "$WORKDIR/config.out" "FORCE_UNSAFE_CONFIGURE=1"
 
 HAOS_DIR="$WORKDIR/haos" \
 CACHE_DIR="$WORKDIR/cache" \

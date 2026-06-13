@@ -45,6 +45,7 @@ docker run -i --rm --privileged \
     -v "$CCACHE_MOUNT" \
     -e BR2_DL_DIR=/cache/dl \
     -e CCACHE_DIR=/ccache \
+    -e FORCE_UNSAFE_CONFIGURE=1 \
     -e BUILDER_UID="$(id -u)" \
     -e BUILDER_GID="$(id -g)" \
     "$HAOS_BUILDER_IMAGE" make "$MAKE_TARGET"

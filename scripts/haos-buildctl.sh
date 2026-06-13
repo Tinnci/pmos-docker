@@ -409,7 +409,7 @@ local_make() {
         ccache_mount="$HAOS_CCACHE_VOLUME:/ccache"
     fi
     if [ "$HAOS_DRY_RUN" = "1" ]; then
-        log "docker run -i --rm --privileged -v $HAOS_DIR:/build -v $CACHE_DIR:/cache -v $HAOS_OUTPUT_VOLUME:/build/output -v $ccache_mount -e BR2_DL_DIR=/cache/dl -e CCACHE_DIR=/ccache $HAOS_BUILDER_IMAGE make $target"
+        log "docker run -i --rm --privileged -v $HAOS_DIR:/build -v $CACHE_DIR:/cache -v $HAOS_OUTPUT_VOLUME:/build/output -v $ccache_mount -e BR2_DL_DIR=/cache/dl -e CCACHE_DIR=/ccache -e FORCE_UNSAFE_CONFIGURE=1 $HAOS_BUILDER_IMAGE make $target"
         return
     fi
     HAOS_DIR="$HAOS_DIR" \
@@ -490,7 +490,7 @@ resume_build() {
         ccache_mount="$HAOS_CCACHE_VOLUME:/ccache"
     fi
     if [ "$HAOS_DRY_RUN" = "1" ]; then
-        log "docker run -i --rm --privileged -v $HAOS_DIR:/build -v $CACHE_DIR:/cache -v $HAOS_OUTPUT_VOLUME:/build/output -v $ccache_mount -e BR2_DL_DIR=/cache/dl -e CCACHE_DIR=/ccache $HAOS_BUILDER_IMAGE make -C /build/buildroot O=/build/output BR2_EXTERNAL=/build/buildroot-external"
+        log "docker run -i --rm --privileged -v $HAOS_DIR:/build -v $CACHE_DIR:/cache -v $HAOS_OUTPUT_VOLUME:/build/output -v $ccache_mount -e BR2_DL_DIR=/cache/dl -e CCACHE_DIR=/ccache -e FORCE_UNSAFE_CONFIGURE=1 $HAOS_BUILDER_IMAGE make -C /build/buildroot O=/build/output BR2_EXTERNAL=/build/buildroot-external"
         return
     fi
     docker volume create "$HAOS_OUTPUT_VOLUME" >/dev/null
@@ -504,6 +504,7 @@ resume_build() {
         -v "$ccache_mount" \
         -e BR2_DL_DIR=/cache/dl \
         -e CCACHE_DIR=/ccache \
+        -e FORCE_UNSAFE_CONFIGURE=1 \
         -e BUILDER_UID="$(id -u)" \
         -e BUILDER_GID="$(id -g)" \
         "$HAOS_BUILDER_IMAGE" make -C /build/buildroot O=/build/output BR2_EXTERNAL=/build/buildroot-external
@@ -583,7 +584,7 @@ cache_warm() {
         ccache_mount="$HAOS_CCACHE_VOLUME:/ccache"
     fi
     if [ "$HAOS_DRY_RUN" = "1" ]; then
-        log "docker run -i --rm --privileged -v $HAOS_DIR:/build -v $CACHE_DIR:/cache -v $HAOS_OUTPUT_VOLUME:/build/output -v $ccache_mount -e BR2_DL_DIR=/cache/dl -e CCACHE_DIR=/ccache $HAOS_BUILDER_IMAGE make -C /build/buildroot O=/build/output BR2_EXTERNAL=/build/buildroot-external $HAOS_CACHE_WARM_TARGETS"
+        log "docker run -i --rm --privileged -v $HAOS_DIR:/build -v $CACHE_DIR:/cache -v $HAOS_OUTPUT_VOLUME:/build/output -v $ccache_mount -e BR2_DL_DIR=/cache/dl -e CCACHE_DIR=/ccache -e FORCE_UNSAFE_CONFIGURE=1 $HAOS_BUILDER_IMAGE make -C /build/buildroot O=/build/output BR2_EXTERNAL=/build/buildroot-external $HAOS_CACHE_WARM_TARGETS"
         return
     fi
     docker volume create "$HAOS_OUTPUT_VOLUME" >/dev/null
@@ -597,6 +598,7 @@ cache_warm() {
         -v "$ccache_mount" \
         -e BR2_DL_DIR=/cache/dl \
         -e CCACHE_DIR=/ccache \
+        -e FORCE_UNSAFE_CONFIGURE=1 \
         "$HAOS_BUILDER_IMAGE" make -C /build/buildroot O=/build/output BR2_EXTERNAL=/build/buildroot-external $HAOS_CACHE_WARM_TARGETS
 }
 
