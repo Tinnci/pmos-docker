@@ -459,6 +459,8 @@ layer_builder() {
 }
 
 layer_download() {
+    log "layer-download: config $HAOS_TARGET before source target warm-up"
+    local_make "${HAOS_TARGET}-config"
     log "layer-download: warm $CACHE_DIR/dl as /cache/dl"
     cache_warm
 }

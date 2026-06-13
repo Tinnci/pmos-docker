@@ -28,8 +28,8 @@ The build is now decomposed into small composable components, exposed through
   apply Kukui board patches, apply the OTBR kernel fragment, and write source metadata.
   This layer runs `source-probe` first.
 - `layer-builder`: smoke-check the builder image contract and required tools.
-- `layer-download`: validate the `/cache/dl` mapping and warm fragile Buildroot source
-  downloads.
+- `layer-download`: generate the target Buildroot config, validate the `/cache/dl`
+  mapping, and warm fragile Buildroot source downloads.
 - `layer-compile`: run `google_kukui-config` and the full `google_kukui` build with
   output and ccache reuse.
 - `layer-artifact`: export, checksum, and verify `kernel.img`, DTBs, `.img.xz`, `.raucb`,

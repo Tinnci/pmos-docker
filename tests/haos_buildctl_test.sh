@@ -111,6 +111,7 @@ EXPORT_DIR="$WORKDIR/export" \
 HAOS_DRY_RUN=1 \
     sh "$BUILDCTL" layer-download >"$WORKDIR/layer-download.out"
 assert_contains "$WORKDIR/layer-download.out" "/cache/dl"
+assert_contains "$WORKDIR/layer-download.out" "make google_kukui-config"
 assert_contains "$WORKDIR/layer-download.out" "dbus-glib-source os-agent-source tempio-source"
 
 HAOS_DIR="$WORKDIR/haos" \
