@@ -102,6 +102,7 @@ assert_contains "$WORKDIR/layer-builder.out" "layer-builder: smoke-check"
 assert_contains "$WORKDIR/layer-builder.out" "command -v make"
 assert_contains "$WORKDIR/layer-builder.out" "command -v git"
 assert_contains "$WORKDIR/layer-builder.out" "command -v ccache"
+assert_contains "$WORKDIR/layer-builder.out" "command -v skopeo"
 assert_contains "$WORKDIR/layer-builder.out" "command -v sgdisk"
 assert_contains "$WORKDIR/layer-builder.out" "vbutil_kernel"
 

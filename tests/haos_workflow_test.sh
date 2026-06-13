@@ -120,5 +120,6 @@ assert_contains "$BUILDER_WORKFLOW" "tr '[:upper:]' '[:lower:]'"
 assert_contains "$BUILDER_DOCKERFILE" "vboot-utils"
 assert_contains "$BUILDER_DOCKERFILE" "gdisk"
 assert_contains "$BUILDER_DOCKERFILE" "ccache"
+assert_contains "$BUILDER_DOCKERFILE" "skopeo"
 
 echo "haos workflow tests passed"

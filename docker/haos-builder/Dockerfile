@@ -32,6 +32,7 @@ RUN apt-get update \
         python3 \
         python3-setuptools \
         rsync \
+        skopeo \
         squashfs-tools \
         unzip \
         wget \

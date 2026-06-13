@@ -428,6 +428,7 @@ set -eu
 command -v make
 command -v git
 command -v ccache
+command -v skopeo
 command -v sgdisk
 command -v xz
 command -v zstd
