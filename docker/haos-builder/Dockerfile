@@ -19,6 +19,8 @@ RUN apt-get update \
         build-essential \
         ccache \
         cpio \
+        cgpt \
+        device-tree-compiler \
         docker-ce \
         dosfstools \
         e2fsprogs \
@@ -33,26 +35,30 @@ RUN apt-get update \
         libelf-dev \
         libncurses-dev \
         libssl-dev \
+        linux-base \
+        lz4 \
         make \
         parted \
         patch \
         perl \
         python3 \
+        python3-pkg-resources \
         python3-setuptools \
         rsync \
         skopeo \
         squashfs-tools \
         sudo \
+        u-boot-tools \
         unzip \
+        vboot-kernel-utils \
+        vboot-utils \
         wget \
         xxd \
         xz-utils \
         zstd \
-    && if apt-cache show vboot-utils >/dev/null 2>&1; then \
-        apt-get install -y --no-install-recommends vboot-utils; \
-    else \
-        apt-get install -y --no-install-recommends vboot-kernel-utils; \
-    fi \
+    && wget -q -O /tmp/depthcharge-tools.deb http://deb.debian.org/debian/pool/main/d/depthcharge-tools/depthcharge-tools_0.6.2-2_all.deb \
+    && apt-get install -y --no-install-recommends /tmp/depthcharge-tools.deb \
+    && rm -f /tmp/depthcharge-tools.deb \
     && rm -rf /var/lib/apt/lists/*
 
 COPY docker/haos-builder/entry.sh /usr/sbin/haos-builder-entry.sh

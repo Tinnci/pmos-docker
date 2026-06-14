@@ -110,6 +110,7 @@ assert_contains "$WORKDIR/layer-builder.out" "command -v skopeo"
 assert_contains "$WORKDIR/layer-builder.out" "command -v sudo"
 assert_contains "$WORKDIR/layer-builder.out" "command -v docker"
 assert_contains "$WORKDIR/layer-builder.out" "command -v dockerd"
+assert_contains "$WORKDIR/layer-builder.out" "command -v mkdepthcharge"
 assert_contains "$WORKDIR/layer-builder.out" "command -v sgdisk"
 assert_contains "$WORKDIR/layer-builder.out" "vbutil_kernel"
 

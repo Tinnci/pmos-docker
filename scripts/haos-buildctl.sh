@@ -457,6 +457,7 @@ command -v skopeo
 command -v sudo
 command -v docker
 command -v dockerd
+command -v mkdepthcharge
 command -v sgdisk
 command -v xz
 command -v zstd

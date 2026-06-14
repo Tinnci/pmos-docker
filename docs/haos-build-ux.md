@@ -122,6 +122,7 @@ late in the HAOS build:
 - `skopeo`
 - `sudo`
 - `docker` and `dockerd`
+- `mkdepthcharge`
 - `sgdisk`
 - filesystem/compression tools
 - ChromeOS vboot tooling
@@ -140,6 +141,7 @@ Preserve these contracts when changing CI:
 - Buildroot host tools may reject root configure; keep
   `FORCE_UNSAFE_CONFIGURE=1` on Docker make invocations.
 - HAOS packaging uses `skopeo`.
+- HAOS post-image generation uses `mkdepthcharge`.
 - HAOS data partition creation needs `sudo`, Docker CLI, and working DinD.
 - Root execution should bypass `sudo`; non-root execution must preserve the
   Buildroot cache/config environment.
