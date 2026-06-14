@@ -11,6 +11,7 @@ on:
       - "scripts/patch-haos-*.sh"
       - "scripts/build-haos-local.sh"
       - "docker/haos-builder/Dockerfile"
+      - "docker/haos-builder/*.sh"
       - "tests/haos*.sh"
       - "tests/actions_node24_test.sh"
   pull_request:
@@ -23,6 +24,7 @@ on:
       - "scripts/patch-haos-*.sh"
       - "scripts/build-haos-local.sh"
       - "docker/haos-builder/Dockerfile"
+      - "docker/haos-builder/*.sh"
       - "tests/haos*.sh"
       - "tests/actions_node24_test.sh"
   schedule:
@@ -72,7 +74,7 @@ jobs:
 
       - name: Validate shell scripts
         run: |
-          for file in scripts/*.sh tests/*.sh; do
+          for file in scripts/*.sh tests/*.sh docker/haos-builder/*.sh; do
             sh -n "$file"
           done
 
@@ -119,17 +121,10 @@ jobs:
       - name: Checkout workflow repository
         uses: actions/checkout@v6
 
-      - name: Normalize GHCR image name
+      - name: Build local HAOS builder image
         run: |
-          owner="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          echo "HAOS_BUILDER_IMAGE=ghcr.io/${owner}/haos-builder:kukui-17.3" >> "$GITHUB_ENV"
-
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          docker build -f docker/haos-builder/Dockerfile -t haos-builder:validate .
+          echo "HAOS_BUILDER_IMAGE=haos-builder:validate" >> "$GITHUB_ENV"
 
       - name: Check builder layer
         run: scripts/haos-buildctl.sh layer-builder
@@ -171,17 +166,10 @@ jobs:
             haos-validate-ccache-${{ env.HAOS_REF }}-${{ runner.os }}-
             haos-validate-ccache-
 
-      - name: Normalize GHCR image name
+      - name: Build local HAOS builder image
         run: |
-          owner="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          echo "HAOS_BUILDER_IMAGE=ghcr.io/${owner}/haos-builder:kukui-17.3" >> "$GITHUB_ENV"
-
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          docker build -f docker/haos-builder/Dockerfile -t haos-builder:validate .
+          echo "HAOS_BUILDER_IMAGE=haos-builder:validate" >> "$GITHUB_ENV"
 
       - name: Prepare source layer
         run: scripts/haos-buildctl.sh layer-source

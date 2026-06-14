@@ -4,14 +4,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gpg \
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod a+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && printf '%s' "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
         bash \
         bc \
         bison \
         build-essential \
-        ca-certificates \
         ccache \
         cpio \
-        curl \
+        docker-ce \
         dosfstools \
         e2fsprogs \
         erofs-utils \
@@ -34,6 +42,7 @@ RUN apt-get update \
         rsync \
         skopeo \
         squashfs-tools \
+        sudo \
         unzip \
         wget \
         xxd \
@@ -46,4 +55,9 @@ RUN apt-get update \
     fi \
     && rm -rf /var/lib/apt/lists/*
 
+COPY docker/haos-builder/entry.sh /usr/sbin/haos-builder-entry.sh
+RUN chmod 0755 /usr/sbin/haos-builder-entry.sh
+
 WORKDIR /build
+
+ENTRYPOINT ["/usr/sbin/haos-builder-entry.sh"]

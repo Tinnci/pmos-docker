@@ -46,7 +46,7 @@ jobs:
 
       - name: Validate shell scripts
         run: |
-          for file in scripts/*.sh tests/*.sh; do
+          for file in scripts/*.sh tests/*.sh docker/haos-builder/*.sh; do
             sh -n "$file"
           done
 

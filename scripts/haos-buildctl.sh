@@ -429,6 +429,9 @@ command -v make
 command -v git
 command -v ccache
 command -v skopeo
+command -v sudo
+command -v docker
+command -v dockerd
 command -v sgdisk
 command -v xz
 command -v zstd
