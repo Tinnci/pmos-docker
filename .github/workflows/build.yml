@@ -39,6 +39,12 @@ env:
   KERNEL_PKG: linux-postmarketos-mediatek-mt81
   DEVICE: google-kukui
 
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
 jobs:
   # ── 前置验证（<30s）：快速发现明显错误，避免等待 2 小时后才报失败 ──
   validate:
@@ -52,22 +58,27 @@ jobs:
         run: |
           echo "检查 sh 脚本语法..."
           for f in scripts/*.sh; do
-            sh -n "$f" && echo "  ✓ $f" || { echo "  ✗ $f 语法错误"; exit 1; }
+            if sh -n "$f"; then
+              echo "  ✓ $f"
+            else
+              echo "  ✗ $f 语法错误"
+              exit 1
+            fi
           done
 
       - name: Validate kconfig keys in patch script
         run: |
           echo "检查 patch-kernel-otbr.sh 中 CONFIG_* 键格式..."
-          INVALID=0
           # 提取所有 kset_y/kset_m/kset_n 调用的 CONFIG_* 键
           grep -E '^\s*kset_[ymn]\s+CONFIG_' scripts/patch-kernel-otbr.sh \
             | sed 's/.*kset_[ymn]\s\+//' | awk '{print $1}' \
-            | while IFS= read -r key; do
-              if ! echo "$key" | grep -qE '^CONFIG_[A-Z0-9_]+$'; then
-                echo "  ✗ 非法 kconfig key: $key"
-                INVALID=1
-              fi
-            done
+            | awk '
+              !/^CONFIG_[A-Z0-9_]+$/ {
+                print "  ✗ 非法 kconfig key: " $0
+                invalid=1
+              }
+              END { exit invalid ? 1 : 0 }
+            '
           # 检查不应出现的 kset_n（可能误禁了必要项）
           DISABLED=$(grep -cE '^\s*kset_n\s+CONFIG_' scripts/patch-kernel-otbr.sh || true)
           echo "  配置摘要："
@@ -95,7 +106,7 @@ jobs:
 
       # 月份标识用于缓存 key 自动轮转（Docker 镜像 / pmaports）
       - name: Set monthly cache key
-        run: echo "YM=$(date +%Y%m)" >> $GITHUB_ENV
+        run: echo "YM=$(date +%Y%m)" >> "$GITHUB_ENV"
 
       # ── 缓存 1: ccache
       # 策略：restore-only key 用分支名匹配最近一次构建结果；
@@ -277,15 +288,27 @@ jobs:
 
       - name: Set artifact metadata
         id: artifact-meta
-        run: echo "name=kernel-${{ env.KERNEL_PKG }}-${{ github.sha }}" >> $GITHUB_OUTPUT
+        run: echo "name=kernel-${{ env.KERNEL_PKG }}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate kernel APK checksums
+        if: hashFiles('artifacts/*.apk') != ''
+        run: sha256sum artifacts/*.apk > artifacts/SHA256SUMS
 
       - name: Upload kernel APK
         uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.artifact-meta.outputs.name }}
-          path: artifacts/*.apk
+          path: |
+            artifacts/*.apk
+            artifacts/SHA256SUMS
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Attest kernel APKs
+        if: hashFiles('artifacts/*.apk') != ''
+        uses: actions/attest@v4
+        with:
+          subject-checksums: artifacts/SHA256SUMS
 
       # ── 保存 ccache（即使构建失败也保存，保留增量编译对象）──
       - name: Save ccache

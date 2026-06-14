@@ -19,6 +19,9 @@ on:
 permissions:
   contents: read
   packages: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: haos-full-${{ github.workflow }}-${{ github.ref }}-${{ inputs.target }}-${{ inputs.upstream_ref }}
@@ -104,6 +107,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve HAOS builder image digest
+        run: |
+          digest="$(docker buildx imagetools inspect "$HAOS_BUILDER_IMAGE" --format '{{ .Manifest.Digest }}')"
+          echo "HAOS_BUILDER_IMAGE_DIGEST=${digest}" >> "$GITHUB_ENV"
+
       - name: Prepare source layer
         run: scripts/haos-buildctl.sh layer-source
 
@@ -175,6 +183,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve HAOS builder image digest
+        run: |
+          digest="$(docker buildx imagetools inspect "$HAOS_BUILDER_IMAGE" --format '{{ .Manifest.Digest }}')"
+          echo "HAOS_BUILDER_IMAGE_DIGEST=${digest}" >> "$GITHUB_ENV"
+
       - name: Prepare source layer
         run: scripts/haos-buildctl.sh layer-source
 
@@ -190,6 +203,26 @@ jobs:
       - name: Export artifact layer
         run: scripts/haos-buildctl.sh layer-artifact
 
+      - name: Upload HAOS artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: haos-${{ inputs.target }}-${{ github.sha }}
+          path: work/haos-artifacts
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attest HAOS release artifacts
+        uses: actions/attest@v4
+        with:
+          subject-checksums: work/haos-artifacts/verification/SHA256SUMS
+
+      - name: Attest HAOS build metadata
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            work/haos-artifacts/verification/build-metadata.env
+            work/haos-artifacts/verification/SHA256SUMS
+
       - name: Collect diagnostics
         if: always()
         run: |
@@ -203,14 +236,6 @@ jobs:
           name: haos-build-diagnostics-${{ github.sha }}
           path: work/diagnostics
           if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Upload HAOS artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: haos-${{ inputs.target }}-${{ github.sha }}
-          path: work/haos-artifacts
-          if-no-files-found: error
           retention-days: 14
 
   verify-artifacts:

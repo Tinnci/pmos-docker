@@ -13,6 +13,9 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -30,6 +33,7 @@ jobs:
       - name: Normalize GHCR image name
         run: |
           owner="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "HAOS_BUILDER_REPOSITORY=ghcr.io/${owner}/haos-builder" >> "$GITHUB_ENV"
           echo "HAOS_BUILDER_IMAGE=ghcr.io/${owner}/haos-builder:kukui-17.3" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
@@ -40,12 +44,20 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push HAOS builder image
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/haos-builder/Dockerfile
           push: true
           tags: ${{ env.HAOS_BUILDER_IMAGE }}
+
+      - name: Attest HAOS builder image
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.HAOS_BUILDER_REPOSITORY }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
       - name: Smoke-check pushed HAOS builder image
         run: scripts/haos-buildctl.sh layer-builder

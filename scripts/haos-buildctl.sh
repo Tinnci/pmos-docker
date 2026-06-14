@@ -21,6 +21,7 @@ HAOS_OUTPUT_VOLUME="${HAOS_OUTPUT_VOLUME:-haos-${HAOS_TARGET}-${HAOS_REF_SLUG}-o
 HAOS_CCACHE_VOLUME="${HAOS_CCACHE_VOLUME:-haos-${HAOS_TARGET}-${HAOS_REF_SLUG}-ccache}"
 HAOS_CCACHE_DIR="${HAOS_CCACHE_DIR:-}"
 HAOS_BUILDER_IMAGE="${HAOS_BUILDER_IMAGE:-ghcr.io/tinnci/haos-builder:kukui-17.3}"
+HAOS_BUILDER_IMAGE_DIGEST="${HAOS_BUILDER_IMAGE_DIGEST:-}"
 HAOS_DRY_RUN="${HAOS_DRY_RUN:-0}"
 HAOS_CACHE_WARM_TARGETS="${HAOS_CACHE_WARM_TARGETS:-dbus-glib-source os-agent-source tempio-source}"
 HAOS_REF_RESOLVED_COMMIT="${HAOS_REF_RESOLVED_COMMIT:-}"
@@ -60,6 +61,7 @@ Important environment:
   HAOS_CCACHE_VOLUME  Default: haos-$HAOS_TARGET-$HAOS_REF_SLUG-ccache
   HAOS_CCACHE_DIR     Optional host path for CI ccache instead of Docker volume.
   HAOS_BUILDER_IMAGE  Default: ghcr.io/tinnci/haos-builder:kukui-17.3
+  HAOS_BUILDER_IMAGE_DIGEST Optional resolved builder image digest for provenance metadata.
   HAOS_STATE_DIR      Default: ./work/haos-buildctl
   HAOS_DRY_RUN        Set to 1 to print commands without running Docker.
 EOF
@@ -174,6 +176,17 @@ write_build_metadata() {
         log "PATCH_SCRIPT_SHA256_KUKUI=$patch_kukui_sha"
         log "PATCH_SCRIPT_SHA256_OTBR=$patch_otbr_sha"
         log "BUILDER_IMAGE=$HAOS_BUILDER_IMAGE"
+        log "HAOS_BUILDER_IMAGE_DIGEST=$HAOS_BUILDER_IMAGE_DIGEST"
+        log "GITHUB_RUN_ID=${GITHUB_RUN_ID:-}"
+        log "GITHUB_RUN_ATTEMPT=${GITHUB_RUN_ATTEMPT:-}"
+        log "GITHUB_WORKFLOW=${GITHUB_WORKFLOW:-}"
+        log "GITHUB_JOB=${GITHUB_JOB:-}"
+        log "GITHUB_REF=${GITHUB_REF:-}"
+        log "GITHUB_SHA=${GITHUB_SHA:-}"
+        log "RUNNER_OS=${RUNNER_OS:-}"
+        log "RUNNER_ARCH=${RUNNER_ARCH:-}"
+        log "RUNNER_IMAGE_OS=${ImageOS:-}"
+        log "RUNNER_IMAGE_VERSION=${ImageVersion:-}"
         log "CACHE_DL=/cache/dl"
         log "OUTPUT_REUSE_MODE=$output_reuse"
         log 'PATCH_SCRIPTS="scripts/patch-haos-kukui-board.sh scripts/patch-haos-otbr-fragment.sh"'
@@ -195,6 +208,7 @@ write_build_metadata() {
         printf 'HAOS_COMMIT=%s\n' "$haos_commit"
         printf 'HAOS_BUILDER_IMAGE=%s\n' "$HAOS_BUILDER_IMAGE"
         printf 'BUILDER_IMAGE=%s\n' "$HAOS_BUILDER_IMAGE"
+        printf 'HAOS_BUILDER_IMAGE_DIGEST=%s\n' "$HAOS_BUILDER_IMAGE_DIGEST"
         printf 'HAOS_OUTPUT_VOLUME=%s\n' "$HAOS_OUTPUT_VOLUME"
         printf 'HAOS_CCACHE_VOLUME=%s\n' "$HAOS_CCACHE_VOLUME"
         printf 'CACHE_DL=/cache/dl\n'
@@ -202,6 +216,16 @@ write_build_metadata() {
         printf 'PATCH_SCRIPT_SHA256_KUKUI=%s\n' "$patch_kukui_sha"
         printf 'PATCH_SCRIPT_SHA256_OTBR=%s\n' "$patch_otbr_sha"
         printf 'PATCH_SCRIPTS="scripts/patch-haos-kukui-board.sh scripts/patch-haos-otbr-fragment.sh"\n'
+        printf 'GITHUB_RUN_ID=%s\n' "${GITHUB_RUN_ID:-}"
+        printf 'GITHUB_RUN_ATTEMPT=%s\n' "${GITHUB_RUN_ATTEMPT:-}"
+        printf 'GITHUB_WORKFLOW=%s\n' "${GITHUB_WORKFLOW:-}"
+        printf 'GITHUB_JOB=%s\n' "${GITHUB_JOB:-}"
+        printf 'GITHUB_REF=%s\n' "${GITHUB_REF:-}"
+        printf 'GITHUB_SHA=%s\n' "${GITHUB_SHA:-}"
+        printf 'RUNNER_OS=%s\n' "${RUNNER_OS:-}"
+        printf 'RUNNER_ARCH=%s\n' "${RUNNER_ARCH:-}"
+        printf 'RUNNER_IMAGE_OS=%s\n' "${ImageOS:-}"
+        printf 'RUNNER_IMAGE_VERSION=%s\n' "${ImageVersion:-}"
     } > "$metadata"
 }
 
@@ -349,6 +373,7 @@ preflight() {
     log "HAOS_CCACHE_VOLUME=$HAOS_CCACHE_VOLUME"
     log "HAOS_CCACHE_DIR=$HAOS_CCACHE_DIR"
     log "HAOS_BUILDER_IMAGE=$HAOS_BUILDER_IMAGE"
+    log "HAOS_BUILDER_IMAGE_DIGEST=$HAOS_BUILDER_IMAGE_DIGEST"
 
     require_haos_dir
 
@@ -612,7 +637,7 @@ diagnostics() {
     log "== layer status =="
     log "source: HAOS_REPO=$HAOS_REPO HAOS_REF=$HAOS_REF HAOS_TARGET=$HAOS_TARGET HAOS_DIR=$HAOS_DIR"
     log "source_probe: HAOS_SOURCE_PROBE_STATUS=$HAOS_SOURCE_PROBE_STATUS HAOS_REF_RESOLVED_COMMIT=${HAOS_REF_RESOLVED_COMMIT:-unknown}"
-    log "builder: HAOS_BUILDER_IMAGE=$HAOS_BUILDER_IMAGE"
+    log "builder: HAOS_BUILDER_IMAGE=$HAOS_BUILDER_IMAGE HAOS_BUILDER_IMAGE_DIGEST=$HAOS_BUILDER_IMAGE_DIGEST"
     log "download: $CACHE_DIR/dl -> /cache/dl"
     log "compile: output=$HAOS_OUTPUT_VOLUME ccache=${HAOS_CCACHE_DIR:-$HAOS_CCACHE_VOLUME} output_reuse=$output_reuse"
     log "artifact: EXPORT_DIR=$EXPORT_DIR metadata=$(metadata_dir)"

@@ -45,9 +45,16 @@ fi
 assert_contains "$WORKFLOWS_DIR/haos-builder-image.yml" "actions/checkout@v6"
 assert_contains "$WORKFLOWS_DIR/haos-builder-image.yml" "docker/login-action@v4"
 assert_contains "$WORKFLOWS_DIR/haos-builder-image.yml" "docker/build-push-action@v7"
+assert_contains "$WORKFLOWS_DIR/haos-builder-image.yml" "actions/attest@v4"
 
 assert_contains "$WORKFLOWS_DIR/haos-build.yml" "actions/cache@v5"
 assert_contains "$WORKFLOWS_DIR/haos-build.yml" "actions/upload-artifact@v6"
 assert_contains "$WORKFLOWS_DIR/haos-build.yml" "actions/download-artifact@v7"
+assert_contains "$WORKFLOWS_DIR/haos-build.yml" "actions/attest@v4"
+
+assert_contains "$WORKFLOWS_DIR/build.yml" "actions/upload-artifact@v6"
+assert_contains "$WORKFLOWS_DIR/build.yml" "actions/cache/restore@v5"
+assert_contains "$WORKFLOWS_DIR/build.yml" "actions/cache/save@v5"
+assert_contains "$WORKFLOWS_DIR/build.yml" "actions/attest@v4"
 
 echo "actions node24 tests passed"
