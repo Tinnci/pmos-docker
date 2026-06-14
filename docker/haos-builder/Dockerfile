@@ -21,6 +21,7 @@ RUN apt-get update \
         cpio \
         docker-ce \
         dosfstools \
+        depthcharge-tools \
         e2fsprogs \
         erofs-utils \
         file \
