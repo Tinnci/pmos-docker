@@ -18,7 +18,7 @@ trap cleanup EXIT
 assert_contains() {
     file="$1"
     text="$2"
-    if ! grep -F "$text" "$file" >/dev/null; then
+    if ! grep -F -- "$text" "$file" >/dev/null; then
         echo "expected '$text' in $file" >&2
         echo "--- $file ---" >&2
         cat "$file" >&2
@@ -29,7 +29,7 @@ assert_contains() {
 assert_not_contains() {
     file="$1"
     text="$2"
-    if grep -F "$text" "$file" >/dev/null; then
+    if grep -F -- "$text" "$file" >/dev/null; then
         echo "did not expect '$text' in $file" >&2
         echo "--- $file ---" >&2
         cat "$file" >&2
@@ -142,6 +142,8 @@ assert_contains "$BUILDER_DOCKERFILE" 'ENTRYPOINT ["/usr/sbin/haos-builder-entry
 bash -n "$BUILDER_ENTRYPOINT"
 assert_contains "$BUILDER_ENTRYPOINT" "dockerd --storage-driver=vfs"
 assert_contains "$BUILDER_ENTRYPOINT" "BUILDER_UID"
-assert_contains "$BUILDER_ENTRYPOINT" "sudo -H -u"
+assert_contains "$BUILDER_ENTRYPOINT" 'if [ "$run_user" = "root" ]; then'
+assert_contains "$BUILDER_ENTRYPOINT" "--preserve-env=BR2_DL_DIR,CCACHE_DIR,FORCE_UNSAFE_CONFIGURE"
+assert_contains "$BUILDER_ENTRYPOINT" '-H -u "$run_user"'
 
 echo "haos workflow tests passed"

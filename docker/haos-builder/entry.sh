@@ -37,7 +37,11 @@ run_user="$(configure_builder_user)"
 
 if cmd="$(command -v "$1")"; then
     shift
-    exec sudo -H -u "$run_user" "$cmd" "$@"
+    if [ "$run_user" = "root" ]; then
+        exec "$cmd" "$@"
+    fi
+
+    exec sudo --preserve-env=BR2_DL_DIR,CCACHE_DIR,FORCE_UNSAFE_CONFIGURE -H -u "$run_user" "$cmd" "$@"
 fi
 
 echo "Command not found: $1" >&2
