@@ -124,7 +124,7 @@ late in the HAOS build:
 - `docker` and `dockerd`
 - `mkdepthcharge`
 - `sgdisk`
-- filesystem/compression tools
+- `xz`, `zstd`, `mkfs.erofs`, `mksquashfs`, `mkfs.ext4`, `mkfs.vfat`
 - ChromeOS vboot tooling
 
 The entrypoint starts `dockerd`, supports root and mapped builder-user execution,
@@ -142,6 +142,7 @@ Preserve these contracts when changing CI:
   `FORCE_UNSAFE_CONFIGURE=1` on Docker make invocations.
 - HAOS packaging uses `skopeo`.
 - HAOS post-image generation uses `mkdepthcharge`.
+- Host-side artifact verification uses `file` and `xz`.
 - HAOS data partition creation needs `sudo`, Docker CLI, and working DinD.
 - Root execution should bypass `sudo`; non-root execution must preserve the
   Buildroot cache/config environment.

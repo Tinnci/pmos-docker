@@ -76,6 +76,11 @@ die() {
     exit 1
 }
 
+require_host_tool() {
+    tool="$1"
+    command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed or not on PATH"
+}
+
 run_cmd() {
     if [ "$HAOS_DRY_RUN" = "1" ]; then
         printf '+ %s\n' "$*"
@@ -377,8 +382,8 @@ preflight() {
 
     require_haos_dir
 
-    command -v docker >/dev/null 2>&1 || die "docker is not installed or not on PATH"
-    command -v git >/dev/null 2>&1 || die "git is not installed or not on PATH"
+    require_host_tool docker
+    require_host_tool git
 
     mkdir -p "$CACHE_DIR/dl" "$EXPORT_DIR"
     [ -z "$HAOS_CCACHE_DIR" ] || mkdir -p "$HAOS_CCACHE_DIR"
@@ -571,6 +576,9 @@ verify_artifacts() {
         log "verify RAUC bootloader=custom and depthcharge-backend"
         return
     fi
+
+    require_host_tool file
+    require_host_tool xz
 
     [ -f "$kernel_img" ] || die "missing kernel.img in $EXPORT_DIR"
     set -- $img_xz

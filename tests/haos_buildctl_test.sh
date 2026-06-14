@@ -51,6 +51,10 @@ assert_contains "$WORKDIR/help.out" "layer-artifact"
 assert_contains "$WORKDIR/help.out" "HAOS_REPO"
 assert_contains "$WORKDIR/help.out" "HAOS_CCACHE_VOLUME"
 assert_contains "$WORKDIR/help.out" "HAOS_BUILDER_IMAGE_DIGEST"
+assert_contains "$BUILDCTL" "require_host_tool docker"
+assert_contains "$BUILDCTL" "require_host_tool git"
+assert_contains "$BUILDCTL" "require_host_tool file"
+assert_contains "$BUILDCTL" "require_host_tool xz"
 
 if HAOS_DIR="$WORKDIR/missing" sh "$BUILDCTL" preflight >"$WORKDIR/preflight.out" 2>"$WORKDIR/preflight.err"; then
     echo "preflight unexpectedly succeeded for missing HAOS_DIR" >&2
@@ -112,6 +116,12 @@ assert_contains "$WORKDIR/layer-builder.out" "command -v docker"
 assert_contains "$WORKDIR/layer-builder.out" "command -v dockerd"
 assert_contains "$WORKDIR/layer-builder.out" "command -v mkdepthcharge"
 assert_contains "$WORKDIR/layer-builder.out" "command -v sgdisk"
+assert_contains "$WORKDIR/layer-builder.out" "command -v xz"
+assert_contains "$WORKDIR/layer-builder.out" "command -v zstd"
+assert_contains "$WORKDIR/layer-builder.out" "command -v mkfs.erofs"
+assert_contains "$WORKDIR/layer-builder.out" "command -v mksquashfs"
+assert_contains "$WORKDIR/layer-builder.out" "command -v mkfs.ext4"
+assert_contains "$WORKDIR/layer-builder.out" "command -v mkfs.vfat"
 assert_contains "$WORKDIR/layer-builder.out" "vbutil_kernel"
 
 HAOS_DIR="$WORKDIR/haos" \
