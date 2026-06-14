@@ -78,6 +78,7 @@ assert_contains "$BUILD_WORKFLOW" "Attest HAOS release artifacts"
 assert_contains "$BUILD_WORKFLOW" "subject-checksums: work/haos-artifacts/verification/SHA256SUMS"
 assert_contains "$BUILD_WORKFLOW" "Attest HAOS build metadata"
 assert_contains "$BUILD_WORKFLOW" "work/haos-artifacts/verification/build-metadata.env"
+assert_contains "$BUILD_WORKFLOW" "work/haos-artifacts/verification/artifact-modes.txt"
 assert_contains "$BUILD_WORKFLOW" 'ghcr.io/${{ github.repository_owner }}/haos-builder:kukui-17.3'
 assert_contains "$BUILD_WORKFLOW" "tr '[:upper:]' '[:lower:]'"
 

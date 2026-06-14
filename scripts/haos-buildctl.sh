@@ -549,6 +549,7 @@ export_artifacts() {
     mkdir -p "$EXPORT_DIR"
     if [ "$HAOS_DRY_RUN" = "1" ]; then
         log "docker run --rm -v $HAOS_OUTPUT_VOLUME:/out:ro -v $EXPORT_DIR:/export $HAOS_BUILDER_IMAGE sh -lc 'cp -av /out/images/. /export/'"
+        log "write verification/artifact-modes.txt"
         return
     fi
     docker run --rm \
@@ -556,9 +557,13 @@ export_artifacts() {
         -v "$EXPORT_DIR:/export" \
         "$HAOS_BUILDER_IMAGE" sh -lc '
             cp -av /out/images/. /export/
-            mkdir -p /export/verification-root/etc/rauc /export/verification-root/usr/lib/rauc
+            mkdir -p /export/verification-root/etc/rauc /export/verification-root/usr/lib/rauc /export/verification
             cp -av /out/target/etc/rauc/system.conf /export/verification-root/etc/rauc/system.conf
             cp -av /out/target/usr/lib/rauc/depthcharge-backend /export/verification-root/usr/lib/rauc/depthcharge-backend
+            {
+                stat -c "%a verification-root/etc/rauc/system.conf" /export/verification-root/etc/rauc/system.conf
+                stat -c "%a verification-root/usr/lib/rauc/depthcharge-backend" /export/verification-root/usr/lib/rauc/depthcharge-backend
+            } > /export/verification/artifact-modes.txt
         '
 }
 
@@ -599,7 +604,21 @@ verify_artifacts() {
         '
     else
         grep -nE "bootloader=custom|bootloader-custom-backend=/usr/lib/rauc/depthcharge-backend" "$EXPORT_DIR/verification-root/etc/rauc/system.conf"
-        test -x "$EXPORT_DIR/verification-root/usr/lib/rauc/depthcharge-backend"
+        [ -f "$EXPORT_DIR/verification-root/usr/lib/rauc/depthcharge-backend" ] || die "missing verification-root/usr/lib/rauc/depthcharge-backend in $EXPORT_DIR"
+        modes_file="$EXPORT_DIR/verification/artifact-modes.txt"
+        [ -f "$modes_file" ] || die "missing verification/artifact-modes.txt in $EXPORT_DIR"
+        awk '
+            $2 == "verification-root/usr/lib/rauc/depthcharge-backend" {
+                mode = $1 + 0
+                owner = int(mode / 100) % 10
+                group = int(mode / 10) % 10
+                other = mode % 10
+                if ((owner % 2) || (group % 2) || (other % 2)) {
+                    executable = 1
+                }
+            }
+            END { exit executable ? 0 : 1 }
+        ' "$modes_file" || die "depthcharge-backend mode did not include an executable bit before artifact upload"
     fi
 
     raw_img="$EXPORT_DIR/.verify-${HAOS_TARGET}.img"

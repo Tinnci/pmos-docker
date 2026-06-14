@@ -80,15 +80,19 @@ builder, patches, or upstream baseline need end-to-end proof.
 - `mt8183-kukui*.dtb`
 - `verification/SHA256SUMS`
 - `verification/build-metadata.env`
+- `verification/artifact-modes.txt`
 
 `verify-artifacts` checks artifact presence, RAUC custom depthcharge backend
-metadata, and ChromeOS kernel partition GUIDs.
+metadata, the pre-upload executable mode recorded in `artifact-modes.txt`, and
+ChromeOS kernel partition GUIDs. Do not rely on downloaded GitHub artifact file
+modes for executable-bit checks.
 
 Attested subjects:
 
 - GHCR builder image digest.
 - HAOS artifacts listed in `verification/SHA256SUMS`.
-- HAOS `verification/build-metadata.env` and `verification/SHA256SUMS`.
+- HAOS `verification/build-metadata.env`, `verification/SHA256SUMS`, and
+  `verification/artifact-modes.txt`.
 - Legacy kernel APKs listed in `artifacts/SHA256SUMS`.
 
 `build-metadata.env` should keep the inputs needed for later diagnosis:

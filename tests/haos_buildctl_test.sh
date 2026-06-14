@@ -157,6 +157,7 @@ HAOS_DRY_RUN=1 \
 assert_contains "$WORKDIR/layer-artifact.out" "cp -av /out/images/. /export/"
 assert_contains "$WORKDIR/layer-artifact.out" "verification/SHA256SUMS"
 assert_contains "$WORKDIR/layer-artifact.out" "verification/build-metadata.env"
+assert_contains "$WORKDIR/layer-artifact.out" "verification/artifact-modes.txt"
 assert_contains "$WORKDIR/layer-artifact.out" "verify kernel.img"
 assert_contains "$WORKDIR/layer-artifact.out" "verify mt8183-kukui*.dtb"
 assert_contains "$WORKDIR/layer-artifact.out" "verify ChromeOS kernel GUIDs"
@@ -209,6 +210,7 @@ EXPORT_DIR="$WORKDIR/export" \
 HAOS_DRY_RUN=1 \
     sh "$BUILDCTL" export-artifacts >"$WORKDIR/export.out"
 assert_contains "$WORKDIR/export.out" "cp -av /out/images/. /export/"
+assert_contains "$WORKDIR/export.out" "verification/artifact-modes.txt"
 
 HAOS_DIR="$WORKDIR/haos" \
 CACHE_DIR="$WORKDIR/cache" \
@@ -217,6 +219,8 @@ HAOS_DRY_RUN=1 \
     sh "$BUILDCTL" verify-artifacts >"$WORKDIR/verify.out"
 assert_contains "$WORKDIR/verify.out" "kernel.img"
 assert_contains "$WORKDIR/verify.out" "haos_google-kukui-*.img.xz"
+assert_contains "$BUILDCTL" "verification/artifact-modes.txt"
+assert_contains "$BUILDCTL" "depthcharge-backend mode did not include an executable bit before artifact upload"
 
 HAOS_DIR="$WORKDIR/haos" \
 CACHE_DIR="$WORKDIR/cache" \

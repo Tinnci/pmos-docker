@@ -222,6 +222,7 @@ jobs:
           subject-path: |
             work/haos-artifacts/verification/build-metadata.env
             work/haos-artifacts/verification/SHA256SUMS
+            work/haos-artifacts/verification/artifact-modes.txt
 
       - name: Collect diagnostics
         if: always()
