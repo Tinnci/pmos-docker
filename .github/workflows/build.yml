@@ -6,6 +6,8 @@ on:
     paths:
       - 'scripts/bootstrap-pmbootstrap.sh'
       - 'scripts/init-pmbootstrap.sh'
+      - 'scripts/patch-kernel-afe-spurious-irq.sh'
+      - 'scripts/mt8183-afe-spurious-irq-rfc.patch'
       - 'scripts/patch-kernel-otbr.sh'
       - 'scripts/tar-wrapper.sh'
       - 'docker-compose.yml'
@@ -15,6 +17,8 @@ on:
     paths:
       - 'scripts/bootstrap-pmbootstrap.sh'
       - 'scripts/init-pmbootstrap.sh'
+      - 'scripts/patch-kernel-afe-spurious-irq.sh'
+      - 'scripts/mt8183-afe-spurious-irq-rfc.patch'
       - 'scripts/patch-kernel-otbr.sh'
       - 'scripts/tar-wrapper.sh'
   workflow_dispatch:
@@ -217,6 +221,11 @@ jobs:
       - name: Patch kernel config (OTBR/BLE/FQ)
         run: |
           docker compose exec -T pmos-builder sh /scripts/patch-kernel-otbr.sh
+
+      # ── 打 MT8183 AFE 空状态 IRQ 源码补丁 ───────────────────
+      - name: Patch MT8183 AFE spurious IRQ handler
+        run: |
+          docker compose exec -T pmos-builder sh /scripts/patch-kernel-afe-spurious-irq.sh
 
       # ── 更新 APKBUILD checksum ──────────────────────────────
       - name: Update kernel checksum
