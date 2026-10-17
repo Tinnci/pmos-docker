@@ -99,3 +99,19 @@ sh /scripts/patch-kernel-otbr.sh
 su -s /bin/sh pmbuild -c \
   "export HOME=/work/pmbootstrap; pmbootstrap build linux-postmarketos-mediatek-mt81"
 ```
+
+## Minimal Krane Kernel (mainline)
+
+`kernel/krane.config` is one config fragment for Krane (MT8183): hardware
+drivers, Thread/OTBR/Matter networking, Bluetooth LE and BlueZ mesh crypto,
+and the HAOS/Docker host options. It is applied to `allnoconfig`, so only what
+Krane needs is built.
+
+```sh
+scripts/build-krane-kernel.sh   # Image + krane sku0/sku176 DTBs, ~4 min on 20 cores
+```
+
+The script warns about fragment options the kernel dropped for unmet
+dependencies; with kernel 6.18.13 none are dropped. This has not been
+boot-tested on hardware. HAOS still builds its own kernel via Buildroot; feed
+this fragment to that build rather than replacing it.
