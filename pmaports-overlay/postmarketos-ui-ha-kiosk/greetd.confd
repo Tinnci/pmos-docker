@@ -1,0 +1,2 @@
+# Configuration for greetd
+cfgfile="/etc/ha-kiosk/greetd-config.toml"
