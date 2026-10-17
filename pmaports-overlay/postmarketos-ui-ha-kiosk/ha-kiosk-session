@@ -1,0 +1,32 @@
+#!/bin/sh
+# Runs inside cage: waits briefly for Home Assistant, then opens it fullscreen.
+[ -r /etc/ha-kiosk/ha-kiosk.conf ] && . /etc/ha-kiosk/ha-kiosk.conf
+[ -r "$HOME/.config/ha-kiosk.conf" ] && . "$HOME/.config/ha-kiosk.conf"
+
+: "${HA_URL:=http://homeassistant.local:8123}"
+: "${HA_WAIT_SECONDS:=60}"
+
+if [ -n "${OUTPUT_TRANSFORM:-}" ]; then
+	for out in $(wlr-randr 2>/dev/null | awk '/^[^ ]/ {print $1}'); do
+		wlr-randr --output "$out" --transform "$OUTPUT_TRANSFORM" || true
+	done
+fi
+
+waited=0
+until curl -fsS -m 3 -o /dev/null "$HA_URL" || [ "$waited" -ge "$HA_WAIT_SECONDS" ]; do
+	sleep 2
+	waited=$((waited + 2))
+done
+
+# shellcheck disable=SC2086
+exec chromium \
+	--ozone-platform=wayland \
+	--kiosk \
+	--touch-events=enabled \
+	--noerrdialogs \
+	--disable-infobars \
+	--disable-session-crashed-bubble \
+	--no-first-run \
+	--user-data-dir="${XDG_STATE_HOME:-$HOME/.local/state}/ha-kiosk" \
+	$CHROMIUM_EXTRA_FLAGS \
+	"$HA_URL"
