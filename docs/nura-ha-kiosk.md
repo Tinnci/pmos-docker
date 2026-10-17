@@ -1,14 +1,20 @@
 # Home Assistant kiosk UI for Nura / postmarketOS
 
-`pmaports-overlay/postmarketos-ui-ha-kiosk` is a pmaports UI meta-package that
-boots a Krane tablet straight into a fullscreen Home Assistant dashboard:
+`pmaports-overlay/postmarketos-ui-ha-kiosk` is a pmaports UI package that boots
+a Krane tablet straight into a fullscreen Home Assistant dashboard (Chromium in
+kiosk mode).
 
-- `cage` (single-app Wayland compositor) started by `greetd`
-- Chromium in kiosk mode, pointed at `HA_URL`
-- `elogind` for the seat, `wlr-randr` for optional rotation
+It builds on `postmarketos-base-ui-cage`, the same base as the stock
+`postmarketos-ui-cage`, so it inherits:
 
-It follows the structure of `postmarketos-ui-phosh` (separate `-openrc` and
-`-systemd` subpackages, greetd config selected via `cfgfile`).
+- the `tinydm` Cage-UI Wayland session, `seatd`/`elogind`, audio and network setup
+- **auto-rotation from the panel's DRM orientation** (`cage-ui-autorotate.sh`)
+- the `/etc/cage-ui/*.sh` hook directory
+
+This package only adds the app: `/etc/cage-ui/10-ha-kiosk.sh` sets
+`CAGE_UI_COMMAND=/usr/libexec/ha-kiosk-session`, which waits for Home
+Assistant and starts Chromium. It deliberately does not run its own display
+manager or compositor config.
 
 ## Use
 
@@ -18,7 +24,7 @@ pmbootstrap install
 ```
 
 Edit `/etc/ha-kiosk/ha-kiosk.conf` (or `~/.config/ha-kiosk.conf`) to set
-`HA_URL`, `OUTPUT_TRANSFORM` and extra Chromium flags.
+`HA_URL` and extra Chromium flags.
 
 ## What runs where
 
@@ -34,7 +40,7 @@ names; **not built or booted**. Not handled yet:
 
 - On-screen keyboard (cage has no layer-shell, so common OSKs may not work).
 - Screen blanking and wake on touch/voice.
-- Auto-rotation (`iio-sensor-proxy` is only recommended).
 - Chromium rendering speed on the Mali-G72 with Panfrost is unmeasured.
+- Auto-rotation depends on the Krane device tree exposing a panel orientation.
 - The package keeps the `postmarketos-ui-*` name; check whether Nura has
   renamed the UI package convention.
