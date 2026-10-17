@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tinnci <23432137+Tinnci@users.noreply.github.com>
+Date: Wed, 1 Jul 2026 23:30:00 +0800
+Subject: [RFC PATCH] ASoC: mediatek: mt8183: Handle empty AFE MCU IRQ status
+ as spurious
+
+On a google,krane MT8183 system running a full-duplex PipeWire path,
+mt8183_afe_irq_handler() can be entered with regmap_read() succeeding but
+with no low AFE_IRQ_STATUS_BITS set in AFE_IRQ_MCU_STATUS.
+
+The observed samples have changing high bits, mcu_en=0xffff, and no active
+low status bit. Returning IRQ_NONE logs repeated "irq status err" messages
+for an interrupt that appears to be late/spurious rather than a failed
+register read. Active PCM streams continue running.
+
+Keep the regmap_read() failure path as an error, but treat an empty MCU-owned
+status as a handled spurious interrupt and rate-limit it at debug level.
+
+This is a local RFC test patch. Replace this header and add a real
+Signed-off-by before sending upstream.
+---
+ sound/soc/mediatek/mt8183/mt8183-afe-pcm.c | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/sound/soc/mediatek/mt8183/mt8183-afe-pcm.c b/sound/soc/mediatek/mt8183/mt8183-afe-pcm.c
+index 8a99f8eaf0e8..86106dbe39f3 100644
+--- a/sound/soc/mediatek/mt8183/mt8183-afe-pcm.c
++++ b/sound/soc/mediatek/mt8183/mt8183-afe-pcm.c
+@@ -636,14 +636,21 @@ static irqreturn_t mt8183_afe_irq_handler(int irq_id, void *dev)
+ 	/* only care IRQ which is sent to MCU */
+ 	status_mcu = status & mcu_en & AFE_IRQ_STATUS_BITS;
+ 
+-	if (ret || status_mcu == 0) {
+-		dev_err(afe->dev, "%s(), irq status err, ret %d, status 0x%x, mcu_en 0x%x\n",
+-			__func__, ret, status, mcu_en);
++	if (ret) {
++		dev_err(afe->dev, "%s(), irq status err, ret %d, mcu_en 0x%x\n",
++			__func__, ret, mcu_en);
+ 
+ 		irq_ret = IRQ_NONE;
+ 		goto err_irq;
+ 	}
+ 
++	if (!status_mcu) {
++		dev_dbg_ratelimited(afe->dev,
++				    "%s(), spurious irq, status 0x%x, mcu_en 0x%x\n",
++				    __func__, status, mcu_en);
++		return IRQ_HANDLED;
++	}
++
+ 	for (i = 0; i < MT8183_MEMIF_NUM; i++) {
+ 		struct mtk_base_afe_memif *memif = &afe->memif[i];
+ 
+-- 
+2.50.0
+
