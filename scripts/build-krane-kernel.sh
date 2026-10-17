@@ -19,9 +19,19 @@ if [ ! -d "$SRC" ]; then
     tar -C "$WORK" -xf "$WORK/linux.tar.xz"
 fi
 
+# Apply local kernel patches (idempotent: skipped if already applied).
+cd "$SRC"
+for p in "$HERE"/kernel/patches/*.patch; do
+    [ -f "$p" ] || continue
+    if patch -p1 -R --dry-run -s < "$p" >/dev/null 2>&1; then
+        echo "patch already applied: $(basename "$p")"
+    else
+        patch -p1 -N < "$p"
+    fi
+done
+
 CROSS="aarch64-linux-gnu-"
 command -v ccache >/dev/null 2>&1 && CROSS="ccache $CROSS"
-cd "$SRC"
 export ARCH=arm64
 make CROSS_COMPILE="$CROSS" allnoconfig
 scripts/kconfig/merge_config.sh -m .config "$HERE/kernel/krane.config"

@@ -113,5 +113,8 @@ scripts/build-krane-kernel.sh   # Image + krane sku0/sku176 DTBs, ~4 min on 20 c
 
 The script warns about fragment options the kernel dropped for unmet
 dependencies; with kernel 6.18.13 none are dropped. This has not been
-boot-tested on hardware. HAOS still builds its own kernel via Buildroot; feed
+boot-tested on hardware. Local kernel patches in `kernel/patches/` are applied automatically (currently
+an MT8183 AFE spurious-interrupt fix, carried over from the
+`mt8183-afe-spurious-irq-rfc` branch; it is an RFC without a `Signed-off-by`).
+HAOS still builds its own kernel via Buildroot; feed
 this fragment to that build rather than replacing it.
