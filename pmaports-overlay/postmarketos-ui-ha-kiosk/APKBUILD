@@ -1,71 +1,37 @@
 # Reference: https://postmarketos.org/uipkg
 maintainer="Tinnci <23432137+Tinnci@users.noreply.github.com>"
 pkgname=postmarketos-ui-ha-kiosk
-pkgver=1
+pkgver=2
 pkgrel=0
-pkgdesc="(Wayland) Single-app Home Assistant dashboard kiosk (cage + Chromium)"
+pkgdesc="(Wayland) Single-app Home Assistant dashboard kiosk on the Cage-UI base"
 url="https://github.com/Tinnci/pmos-docker"
 arch="noarch !armhf"
 license="MIT"
 depends="
-	cage
 	chromium
 	curl
-	elogind
-	greetd
-	postmarketos-base-ui
-	wlr-randr
+	postmarketos-base-ui-cage
 	"
-_pmb_recommends="
-	iio-sensor-proxy
-	"
-install="
-	$pkgname-openrc.post-install
-	$pkgname-openrc.post-upgrade
-	"
-subpackages="
-	$pkgname-openrc
-	$pkgname-systemd
-	"
+# Same as postmarketos-ui-cage; see pmbootstrap issue 2347.
+_pmb_groups="seat"
 source="
 	ha-kiosk.conf
 	ha-kiosk-session
-	greetd-config.toml
-	greetd.confd
-	systemd-greetd.conf
+	10-ha-kiosk.sh
 	"
-options="!check pmb:drm pmb:default-systemd pmb:support-openrc pmb:support-systemd"
+options="!check pmb:drm pmb:default-openrc pmb:support-openrc pmb:support-systemd"
 
 package() {
 	install -Dm644 "$srcdir"/ha-kiosk.conf \
 		"$pkgdir"/etc/ha-kiosk/ha-kiosk.conf
-	install -Dm644 "$srcdir"/greetd-config.toml \
-		"$pkgdir"/etc/ha-kiosk/greetd-config.toml
+	install -Dm644 "$srcdir"/10-ha-kiosk.sh \
+		"$pkgdir"/etc/cage-ui/10-ha-kiosk.sh
 	install -Dm755 "$srcdir"/ha-kiosk-session \
 		"$pkgdir"/usr/libexec/ha-kiosk-session
 }
 
-openrc() {
-	install_if="$pkgname=$pkgver-r$pkgrel openrc"
-	depends="greetd-openrc"
-	replaces="greetd-openrc"
-
-	install -Dm644 "$srcdir"/greetd.confd \
-		"$subpkgdir"/etc/conf.d/greetd
-}
-
-systemd() {
-	install_if="$pkgname=$pkgver-r$pkgrel systemd"
-	depends="greetd-systemd"
-
-	install -Dm644 "$srcdir"/systemd-greetd.conf \
-		"$subpkgdir"/usr/lib/systemd/system/greetd.service.d/override.conf
-}
-
 sha512sums="
-4b83e20138b20b1dce52850f0a1dc4a15fe1de8861725e688c0f11b68ace583d9bc5c09edea7cdc0b3f25fe3acadf385d2b98bf5b62d2753cf023892fabdc463  ha-kiosk.conf
-2d2d47d0e1aadae694d57eae4a8f10b6103192b904c69cd7fce8ab9d2211ccf1e9225038dc685871a0d00bc5f669f0553abdb6f43fac442e83fce169dbcb6971  ha-kiosk-session
-71a8d753a896a3daec665fa9bcc913f572f4758b46d69196d12d126bd47150e19e4e34fc6572d7c4d56c281ba112f07e59aad843cf53ca9a722aa9d5a87376a1  greetd-config.toml
-5cf83fff79f307e94ea8908ffa7c0c888c3cfe337d9bcad494d922114a03f94a3721b4171095f778c596efe4f0b812cd706010d0e42af5c939434e74bcfb0157  greetd.confd
-49c953e7996b68aec9e9eefa9b574d97875da9bce0d09a70c6bda9b8fc9d88ec5a090843abf57aacbf07d950456bd2cc6ed46f0bca4e9306e999c5faa8988d9b  systemd-greetd.conf
+d29abb567d1826edff4d0cd9dde978e0cb2e66293efa1d0d6e5a4af39a50923818dc5002d0486697fb0721e2caa20aca932adb86f286559f5af7be46101f74b4  ha-kiosk.conf
+9a8a27227b3c23afe8a379ce2724f4cee8751f84d16e4bd2b4f0be5488fcf8e4f6d60f8162ea256deee1da791976bf527e2634cc1ff53dd1f8895c7e5507e75c  ha-kiosk-session
+f671668efffa784de83dfde815f30954ab92c73d20cccc085789c8d5957cd9a577e1a4bbe5332983ff8e91e5e0d694f67222210e6c0eb02deffa93b6129530f7  10-ha-kiosk.sh
 "

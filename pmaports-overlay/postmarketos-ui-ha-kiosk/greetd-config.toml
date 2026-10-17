@@ -1,7 +1,0 @@
-# greetd configuration for the Home Assistant kiosk session.
-[terminal]
-vt = 1
-
-[default_session]
-command = "cage -s -- /usr/libexec/ha-kiosk-session"
-user = "user"
